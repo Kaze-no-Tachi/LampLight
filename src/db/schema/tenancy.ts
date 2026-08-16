@@ -52,7 +52,9 @@ export const tenantDomains = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (table) => [unique('tenant_domains_tenant_id_id_key').on(table.tenantId, table.id)],
+  (table) => [
+    unique('tenant_domains_tenant_id_id_key').on(table.tenantId, table.id),
+  ],
 );
 
 /**

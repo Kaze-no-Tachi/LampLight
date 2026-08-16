@@ -49,7 +49,9 @@ export async function listPublishedCourses(
         eq(products.id, courses.productId),
       ),
     )
-    .where(and(eq(courses.tenantId, scope.tenantId), eq(products.isPublished, true)))
+    .where(
+      and(eq(courses.tenantId, scope.tenantId), eq(products.isPublished, true)),
+    )
     .orderBy(asc(courses.title));
 }
 
@@ -107,7 +109,10 @@ export async function listPublishedPrograms(
       ),
     )
     .where(
-      and(eq(programs.tenantId, scope.tenantId), eq(products.isPublished, true)),
+      and(
+        eq(programs.tenantId, scope.tenantId),
+        eq(products.isPublished, true),
+      ),
     )
     .orderBy(asc(programs.title));
 }

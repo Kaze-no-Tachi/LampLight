@@ -47,7 +47,10 @@ export const memberships = pgTable(
   },
   (table) => [
     unique('memberships_tenant_id_id_key').on(table.tenantId, table.id),
-    unique('memberships_tenant_id_user_id_key').on(table.tenantId, table.userId),
+    unique('memberships_tenant_id_user_id_key').on(
+      table.tenantId,
+      table.userId,
+    ),
   ],
 );
 

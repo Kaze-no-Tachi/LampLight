@@ -92,7 +92,9 @@ describe('seed fixture', () => {
   it('gives every course a free preview lesson and a gated lesson', () => {
     for (const tenant of SEED_TENANTS) {
       for (const course of tenant.courses) {
-        const all = course.modules.flatMap((courseModule) => courseModule.lessons);
+        const all = course.modules.flatMap(
+          (courseModule) => courseModule.lessons,
+        );
         expect(all.filter((lesson) => lesson.isFreePreview)).toHaveLength(1);
         expect(firstGatedLesson(course)).toBeDefined();
       }

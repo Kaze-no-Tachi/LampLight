@@ -50,7 +50,9 @@ export function getTenantDb(tenantId: string): TenantDb {
     // Caught here rather than at the ::uuid cast inside the policy, so a bad
     // value produces a clear error instead of a Postgres syntax exception
     // halfway through a request.
-    throw new Error(`getTenantDb requires a uuid tenant id, received: ${tenantId}`);
+    throw new Error(
+      `getTenantDb requires a uuid tenant id, received: ${tenantId}`,
+    );
   }
 
   return {

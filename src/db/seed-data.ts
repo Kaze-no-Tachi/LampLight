@@ -159,23 +159,26 @@ const COURSE_TEMPLATE: {
   },
 ];
 
-const PROGRAM_TEMPLATE: { slug: string; title: string; courseSlugs: string[] }[] =
-  [
-    {
-      slug: 'diploma-in-biblical-studies',
-      title: 'Diploma in Biblical Studies',
-      courseSlugs: [
-        'old-testament-survey',
-        'new-testament-survey',
-        'systematic-theology-i',
-      ],
-    },
-    {
-      slug: 'certificate-in-ministry',
-      title: 'Certificate in Ministry',
-      courseSlugs: ['church-history', 'hermeneutics', 'pastoral-ministry'],
-    },
-  ];
+const PROGRAM_TEMPLATE: {
+  slug: string;
+  title: string;
+  courseSlugs: string[];
+}[] = [
+  {
+    slug: 'diploma-in-biblical-studies',
+    title: 'Diploma in Biblical Studies',
+    courseSlugs: [
+      'old-testament-survey',
+      'new-testament-survey',
+      'systematic-theology-i',
+    ],
+  },
+  {
+    slug: 'certificate-in-ministry',
+    title: 'Certificate in Ministry',
+    courseSlugs: ['church-history', 'hermeneutics', 'pastoral-ministry'],
+  },
+];
 
 const MODULES_PER_COURSE = 2;
 const LESSONS_PER_MODULE = 2;
@@ -277,7 +280,12 @@ function buildUsers(
 
   return {
     admin: make('admin', 'admin', 'Institute Admin', 'admin'),
-    instructor: make('instructor', 'instructor', 'Lead Instructor', 'instructor'),
+    instructor: make(
+      'instructor',
+      'instructor',
+      'Lead Instructor',
+      'instructor',
+    ),
     student1: make('student1', 'student1', 'First Student', 'student'),
     student2: make('student2', 'student2', 'Second Student', 'student'),
     // Same person as at the other tenant, deliberately.

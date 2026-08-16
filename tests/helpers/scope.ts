@@ -41,7 +41,9 @@ export async function withScope<T>(
   return getAdminDb().transaction(async (tx) => {
     // Set for symmetry with the real path. The admin role bypasses RLS, so
     // this has no effect on visibility here, which is exactly the point.
-    await tx.execute(sql`select set_config('app.tenant_id', ${tenantId}, true)`);
+    await tx.execute(
+      sql`select set_config('app.tenant_id', ${tenantId}, true)`,
+    );
     return fn({ tenantId, tx });
   });
 }

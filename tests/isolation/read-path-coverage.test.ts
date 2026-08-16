@@ -23,7 +23,9 @@ const REPOSITORY_MODULES: Record<string, Record<string, unknown>> = {
 function exportedReadPaths(): string[] {
   const names: string[] = [];
 
-  for (const [moduleName, repositoryModule] of Object.entries(REPOSITORY_MODULES)) {
+  for (const [moduleName, repositoryModule] of Object.entries(
+    REPOSITORY_MODULES,
+  )) {
     for (const [exportName, value] of Object.entries(repositoryModule)) {
       if (typeof value === 'function') {
         names.push(`${moduleName}.${exportName}`);

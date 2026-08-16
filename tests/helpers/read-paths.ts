@@ -100,9 +100,7 @@ export const READ_PATHS: ReadPath[] = [
     name: 'catalog.listPublishedPrograms',
     async run(scope, subject) {
       const rows = await listPublishedPrograms(scope);
-      const subjectIds = new Set(
-        subject.programs.map((program) => program.id),
-      );
+      const subjectIds = new Set(subject.programs.map((program) => program.id));
       return ownedBySubject(
         rows.map((row) => row.id),
         subjectIds,

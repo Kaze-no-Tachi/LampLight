@@ -49,7 +49,10 @@ describe('row-level security coverage', () => {
     for (const table of TENANT_OWNED_TABLES) {
       const row = byName.get(table);
 
-      expect(row, `${table} is registered as tenant owned but does not exist`).toBeDefined();
+      expect(
+        row,
+        `${table} is registered as tenant owned but does not exist`,
+      ).toBeDefined();
       if (!row) continue;
 
       expect(row.has_tenant_id, `${table} has no tenant_id column`).toBe(true);
