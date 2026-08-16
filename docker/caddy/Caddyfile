@@ -1,0 +1,35 @@
+# Self-host reverse proxy (PRD section 5.3, "point DNS at the box, terminate
+# TLS with Caddy in the compose file").
+#
+# This file is for the single-institute self-host path only. The platform
+# deployment does not use it: Cloudflare terminates TLS at the edge and reaches
+# the origin through an outbound tunnel, so there is no inbound listener to
+# configure. See docs/adr/0004.
+#
+# Caddy obtains and renews the certificate automatically. There is nothing to
+# run on a schedule and no cron job to forget.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$SELFHOST_DOMAIN} {
+	encode zstd gzip
+
+	# Lesson audio is served through short-lived signed URLs rather than from
+	# disk, so there is no static file root here on purpose. Everything goes to
+	# the application, which is the only thing allowed to decide who may hear
+	# what (PRD section 7).
+	reverse_proxy app:3000 {
+		header_up X-Forwarded-Proto {scheme}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# Caddy advertises itself by default. Institutions get security
+		# questionnaires, and a version banner is a free finding against them.
+		-Server
+	}
+}

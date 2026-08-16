@@ -1,0 +1,62 @@
+# Cloudflare Tunnel ingress for the platform deployment.
+#
+# WHY A TUNNEL RATHER THAN A PUBLIC ORIGIN
+#
+# Cloudflare for SaaS terminates TLS at the edge for each tenant's custom
+# hostname, then connects to the fallback origin. On that connection it sends
+# the tenant's hostname as BOTH the Host header and the TLS SNI. A reverse
+# proxy listening publicly would therefore be asked to present a certificate
+# for institute.edu, which it cannot obtain: the tenant's DNS points at
+# Cloudflare, so no ACME challenge can complete. Cloudflare's own fix for the
+# mismatch, SNI rewrite, is a gated entitlement.
+#
+# A tunnel removes the problem instead of working around it. There is no
+# inbound TLS listener, so there is no certificate to present. It also means
+# the VPS opens no inbound ports at all and its IP is never published, which
+# matters on a box holding student records for several institutions.
+#
+# WHY A LOCALLY MANAGED TUNNEL
+#
+# Remotely managed (token) tunnels configure ingress in the Cloudflare
+# dashboard, which requires naming each public hostname up front. Tenant
+# domains are arbitrary and arrive at onboarding time, so there is nothing to
+# name. A locally managed tunnel can carry the catch-all rule below, which is
+# exactly what a multi-tenant origin needs.
+#
+# SETUP, ONCE PER ENVIRONMENT
+#
+#   cloudflared tunnel login
+#   cloudflared tunnel create lectern-production
+#     -> writes <TUNNEL-UUID>.json
+#   install it at /srv/lectern/cloudflared/tunnel.json, chmod 600
+#   replace the tunnel id below with the UUID
+#
+# Then point Cloudflare for SaaS at it:
+#
+#   1. Create a CNAME record in the platform zone:
+#        origin.<apex>  ->  <TUNNEL-UUID>.cfargotunnel.com
+#   2. Set that record to PROXIED (orange cloud). This is the step most guides
+#      get wrong. A DNS-only record produces Cloudflare error 1016.
+#   3. Designate origin.<apex> as the Custom Hostnames fallback origin and wait
+#      for its status to read Active.
+
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: /etc/cloudflared/creds/tunnel.json
+
+# Fail fast rather than buffering a slow origin.
+originRequest:
+  connectTimeout: 10s
+  noTLSVerify: false
+
+ingress:
+  # Catch-all. Every tenant hostname, every platform subdomain, and the apex
+  # all resolve to the same application, which reads the Host header and
+  # resolves the tenant itself (PRD section 5.2). Adding hostname-specific
+  # rules here would duplicate that logic in a second place and let the two
+  # disagree.
+  #
+  # Traefik, which Dokploy runs, is deliberately not in this path. It routes by
+  # Host, and tenant hostnames are not known ahead of time, so a catch-all at
+  # the tunnel is both simpler and the only thing that works without
+  # regenerating proxy config on every tenant onboarding.
+  - service: http://app:3000

@@ -1,0 +1,125 @@
+# Production stack for the single VPS (see docs/adr/0004).
+#
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Deliberately absent:
+#
+#   Published ports. Nothing on this box listens on a public interface.
+#   Cloudflare reaches the application through an outbound tunnel, so the
+#   origin has no inbound attack surface and its IP is never exposed.
+#
+#   Minio. Lesson media lives in Cloudflare R2 in production. The only durable
+#   state on this box is the Postgres volume, which is what the backup schedule
+#   has to cover.
+#
+# This file is intended to be deployed by Dokploy using its "Docker Compose"
+# service type, not "Stack". Stack mode deploys through Docker Swarm and drops
+# support for build, depends_on conditions, and profiles, all three of which
+# this file relies on.
+
+name: lectern
+
+services:
+  app:
+    image: ${LECTERN_IMAGE:-ghcr.io/kaze-no-tachi/lectern:latest}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      # Inside the compose network the database is reachable by service name.
+      # These come from the Dokploy environment store, never from a file in the
+      # repository.
+      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_ADMIN_URL: ${DATABASE_ADMIN_URL}
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+      TENANCY_MODE: platform
+      PLATFORM_APEX_DOMAIN: ${PLATFORM_APEX_DOMAIN}
+      TENANT_SUBDOMAIN_ROOT: ${TENANT_SUBDOMAIN_ROOT}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+      CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID}
+      CLOUDFLARE_SAAS_FALLBACK_ORIGIN: ${CLOUDFLARE_SAAS_FALLBACK_ORIGIN}
+      S3_ENDPOINT: ${S3_ENDPOINT}
+      S3_REGION: ${S3_REGION:-auto}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_FORCE_PATH_STYLE: 'false'
+      SIGNED_URL_TTL_SECONDS: ${SIGNED_URL_TTL_SECONDS:-300}
+      PAYMENTS_MODE: connect
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      STRIPE_CONNECT_CLIENT_ID: ${STRIPE_CONNECT_CLIENT_ID}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'wget',
+          '--quiet',
+          '--tries=1',
+          '--spider',
+          'http://127.0.0.1:3000/api/health',
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  # Run explicitly before the app rolls, never automatically:
+  #   docker compose -f docker-compose.prod.yml --profile tools run --rm migrate
+  # The profile keeps `up` from starting it, which matters because two
+  # instances racing the migration table is how a schema gets corrupted.
+  migrate:
+    image: ${LECTERN_MIGRATOR_IMAGE:-ghcr.io/kaze-no-tachi/lectern:latest-migrator}
+    profiles: ['tools']
+    restart: 'no'
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL}
+      DATABASE_ADMIN_URL: ${DATABASE_ADMIN_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-lectern_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-lectern}
+      LECTERN_APP_PASSWORD: ${POSTGRES_APP_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Same role bootstrap the development stack and CI use. The application
+      # role is created without BYPASSRLS, which is what makes the row-level
+      # security layer real rather than decorative (see docs/adr/0002).
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U ${POSTGRES_ADMIN_USER:-lectern_admin} -d ${POSTGRES_DB:-lectern}',
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./docker/cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      # The tunnel credentials JSON produced by `cloudflared tunnel create`.
+      # Lives on the VPS at /srv/lectern/cloudflared, mode 600, never in git.
+      - ${CLOUDFLARED_CREDENTIALS_DIR:-/srv/lectern/cloudflared}:/etc/cloudflared/creds:ro
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
