@@ -1,4 +1,10 @@
-name: lamplight
+# Distinct from the production stack's project name on purpose. Compose keys
+# everything on the project name, so when this file and docker-compose.prod.yml
+# shared one, running the production file locally silently reconciled against
+# the development containers: it removed services the production file does not
+# define and recreated postgres with production settings, taking the local
+# development volume with it. Three files, three project names.
+name: lamplight-dev
 
 services:
   postgres:

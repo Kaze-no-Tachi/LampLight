@@ -1,0 +1,9 @@
+# Keeps public/ present in a fresh clone.
+#
+# Git does not track empty directories, and the Dockerfile runner stage does
+# COPY --from=builder /app/public ./public, which fails outright when the
+# directory is absent. Without this file the first CI publish job would break
+# on a clean checkout even though local builds succeeded, because local builds
+# had a public/ left over from development.
+#
+# Delete this once there is a real asset in here.

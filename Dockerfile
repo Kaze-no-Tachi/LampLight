@@ -51,7 +51,12 @@ COPY src ./src
 COPY tsconfig.json ./
 RUN addgroup -g 1001 -S nodejs && adduser -u 1001 -S migrator -G nodejs
 USER migrator
-CMD ["pnpm", "db:migrate"]
+# Invoked through the local tsx binary rather than `pnpm db:migrate`. Corepack
+# ships as a shim, so calling pnpm here made the container download the package
+# manager from npmjs on every run, which means a deploy-time network dependency
+# on a step that only needs to reach Postgres. Migrations must not fail because
+# a registry is slow.
+CMD ["node_modules/.bin/tsx", "src/db/migrate.ts"]
 
 # ---------------------------------------------------------------------------
 FROM base AS runner
