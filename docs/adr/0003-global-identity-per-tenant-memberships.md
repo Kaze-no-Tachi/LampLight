@@ -82,3 +82,30 @@ password change at one institute silently does not apply at the other.
 the PRD explicitly defers, and it carries privacy consequences (one institute
 learning which others a person attends) that need a deliberate decision rather
 than a default.
+
+## Addendum, 2026-08-16: the obligation collides with the roadmap
+
+The obligation this ADR created, that signup must not reveal cross-tenant
+account existence, turns out not to be satisfiable on its own schedule.
+
+Making the response uniform is straightforward and is done. It is not
+sufficient. Anyone who can sign up can then try to sign in with the password
+they just chose: success means the address was new, failure means it already
+existed. The difference is real, so no amount of shaping the response removes
+it. The only fix is to activate nothing until a link sent to the address is
+followed, which ends both paths at "check your email" and leaves nothing to
+test.
+
+That requires mail delivery. The PRD schedules email notifications as P1 and
+the property they protect as P0-5. Those cannot both hold, and the conflict is
+in the requirements rather than in the implementation.
+
+Resolved by shipping self-serve signup disabled (`SELF_SERVE_SIGNUP`, default
+false). The endpoint accepts the request and answers exactly as it does when
+enabled, so the setting is not observable from outside, and P0-5 holds today
+because there is no working oracle to run. Accounts reach institutes through
+superadmin provisioning now, and through Stripe checkout in phase 6.
+
+Enabling it is one environment variable once mail delivery lands, at which
+point `requireEmailVerification` should be turned on in the same change. Doing
+one without the other reopens exactly this hole.

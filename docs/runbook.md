@@ -200,6 +200,26 @@ docker compose -f docker-compose.prod.yml exec -T postgres \
 
 ---
 
+## 4a. Provisioning an institute
+
+From the superadmin console on the platform apex. It creates the tenant, its
+subdomain, and the first admin in one action, and writes an audit_log row.
+
+The console returns a **single-use setup link on the institute's own domain**,
+never a password. Pass it to the new admin however you like. It expires, works
+once, and ends with them choosing a secret you never learn. If the address
+already had an account, no link is issued and their credentials are untouched,
+because provisioning must not be a way to seize an existing identity.
+
+Until mail delivery lands (P1) that hand-off is manual, so send the link over a
+channel you trust and do not paste it anywhere it will persist.
+
+**Self-serve signup ships disabled.** `SELF_SERVE_SIGNUP` defaults to false,
+and turning it on before mail verification exists reopens an account-existence
+oracle. See the addendum in docs/adr/0003.
+
+---
+
 ## 5. Rotate secrets
 
 | Secret                    | How                                                                                                                                                   |
