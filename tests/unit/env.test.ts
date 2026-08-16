@@ -19,6 +19,10 @@ const PLATFORM_PRODUCTION = {
   TENANCY_MODE: 'platform',
   DATABASE_URL: 'postgres://app:pw@localhost:5432/lamplight',
   DATABASE_ADMIN_URL: 'postgres://admin:pw@localhost:5432/lamplight',
+  // Mail is required of every production deployment, so it is part of the
+  // baseline here rather than something individual cases opt into.
+  SMTP_HOST: 'smtp.example.net',
+  MAIL_FROM: 'Lamplight <no-reply@lamplight.school>',
 } as const;
 
 function stub(values: Record<string, string>): void {
@@ -75,6 +79,37 @@ describe('environment validation', () => {
     const { assertPlatformConfig } = await import('@/env');
 
     expect(() => assertPlatformConfig()).not.toThrow();
+  });
+
+  it('refuses to serve production without a mail transport, self-host included', async () => {
+    // Not a notification feature. Account creation ends at a link sent to the
+    // address, so an instance with no transport accepts signups into a void.
+    // Single-tenant mode is exempt from Cloudflare, never from this.
+    stub({
+      ...PLATFORM_PRODUCTION,
+      TENANCY_MODE: 'single',
+      SINGLE_TENANT_SLUG: 'grace',
+      SMTP_HOST: '',
+      MAIL_FROM: '',
+    });
+    const { assertPlatformConfig } = await import('@/env');
+
+    expect(() => assertPlatformConfig()).toThrow(/SMTP_HOST/);
+  });
+
+  it('lets the migrator boot in production without mail configured', async () => {
+    // Same split as Cloudflare: tooling parses, only the app asserts.
+    stub({ ...PLATFORM_PRODUCTION, SMTP_HOST: '', MAIL_FROM: '' });
+    const { getEnv } = await import('@/env');
+
+    expect(() => getEnv()).not.toThrow();
+  });
+
+  it('refuses to boot when SMTP is forced without a host', async () => {
+    stub({ ...PLATFORM_PRODUCTION, MAIL_TRANSPORT: 'smtp', SMTP_HOST: '' });
+    const { getEnv } = await import('@/env');
+
+    expect(() => getEnv()).toThrow(/SMTP_HOST/);
   });
 
   it('refuses to boot when the two database roles are the same', async () => {

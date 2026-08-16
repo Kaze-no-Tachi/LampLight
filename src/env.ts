@@ -66,6 +66,27 @@ const envSchema = z.object({
     .transform((value) => value === 'true'),
   BETTER_AUTH_URL: z.string().url().optional(),
 
+  /**
+   * Mail (phase 2, brought forward from P1).
+   *
+   * Delivery is not a notification feature here, it is part of account
+   * creation: nothing activates until a link sent to the address is followed.
+   * 'auto' picks SMTP when a host is configured, an in-memory outbox under
+   * NODE_ENV=test, and a transport that logs the message otherwise, so a
+   * developer can complete the flow without running a mail server.
+   * Production refuses to serve without real SMTP, see assertPlatformConfig.
+   */
+  MAIL_TRANSPORT: z.enum(['auto', 'smtp', 'console', 'memory']).default('auto'),
+  SMTP_HOST: z.string().min(1).optional(),
+  SMTP_PORT: z.coerce.number().int().positive().max(65535).default(587),
+  SMTP_USER: z.string().min(1).optional(),
+  SMTP_PASSWORD: z.string().min(1).optional(),
+  SMTP_SECURE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  MAIL_FROM: z.string().min(1).optional(),
+
   // Custom domains (phase 3).
   CLOUDFLARE_API_TOKEN: z.string().min(1).optional(),
   CLOUDFLARE_ZONE_ID: z.string().min(1).optional(),
@@ -128,6 +149,13 @@ function parseEnv(): Env {
     );
   }
 
+  if (value.MAIL_TRANSPORT === 'smtp' && !value.SMTP_HOST) {
+    throw new Error(
+      'Invalid environment configuration:\n' +
+        '  SMTP_HOST: required when MAIL_TRANSPORT is "smtp"',
+    );
+  }
+
   if (value.DATABASE_URL === value.DATABASE_ADMIN_URL) {
     // Same connection string means the application runs as the RLS-bypassing
     // role, which silently removes the database isolation layer.
@@ -166,9 +194,22 @@ export function getEnv(): Env {
 export function assertPlatformConfig(): void {
   const value = getEnv();
 
-  if (value.TENANCY_MODE !== 'platform' || value.NODE_ENV !== 'production') {
-    return;
+  if (value.NODE_ENV !== 'production') return;
+
+  // Mail is required in every production deployment, self-host included.
+  // Account creation ends at a link sent to the address, so an instance
+  // without a transport can issue invitations that nobody can ever act on.
+  // Refusing to serve is better than accepting signups into a void.
+  if (!value.SMTP_HOST || !value.MAIL_FROM) {
+    throw new Error(
+      'Invalid environment configuration:\n' +
+        (!value.SMTP_HOST ? '  SMTP_HOST: required in production\n' : '') +
+        (!value.MAIL_FROM ? '  MAIL_FROM: required in production\n' : '') +
+        '\nAccount activation depends on mail delivery. See docs/runbook.md.',
+    );
   }
+
+  if (value.TENANCY_MODE !== 'platform') return;
 
   const missing = (
     [
