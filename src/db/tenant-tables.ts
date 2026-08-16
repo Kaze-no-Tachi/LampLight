@@ -47,5 +47,8 @@ export const GLOBAL_TABLES = [
   'tenants',
   'users',
   'platform_admins',
+  'sessions',
+  'accounts',
+  'verifications',
   '__drizzle_migrations',
 ] as const;

@@ -22,6 +22,13 @@
       "when": 1786877280619,
       "tag": "0002_host_resolution",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786878544490,
+      "tag": "0003_auth_tables",
+      "breakpoints": true
     }
   ]
 }

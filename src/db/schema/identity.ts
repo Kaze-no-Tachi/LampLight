@@ -1,4 +1,12 @@
-import { pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { membershipRole } from './enums';
 import { tenants } from './tenancy';
 
@@ -15,9 +23,15 @@ import { tenants } from './tenancy';
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: text('email').notNull().unique(),
-  name: text('name'),
+  // Better Auth treats name as required, so it is not null with an empty
+  // default rather than nullable. Signup always supplies one.
+  name: text('name').notNull().default(''),
+  emailVerified: boolean('email_verified').notNull().default(false),
   image: text('image'),
   createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
 });
@@ -66,3 +80,102 @@ export const platformAdmins = pgTable('platform_admins', {
     .notNull()
     .defaultNow(),
 });
+
+/**
+ * Better Auth's own tables (PRD section 5.4).
+ *
+ * Global, like `users`, and for the same reason: identity is platform-wide and
+ * membership is what scopes it to an institute. None of these carry a
+ * tenant_id and none have an RLS policy, so they are listed in GLOBAL_TABLES.
+ *
+ * THE POINT THAT MATTERS: a session is authentication, not authorization.
+ *
+ * Holding a valid session proves who someone is. It proves nothing about which
+ * institute they may see. Every gated read still resolves the tenant from the
+ * Host header and checks `memberships` for that tenant, so a session minted on
+ * one institute's domain grants exactly nothing on another's, even though the
+ * row lives in a shared table.
+ *
+ * Cookies are host-scoped by default, so the token is not even transmitted
+ * across tenant domains. That is a second line rather than the first one: the
+ * membership check is what actually enforces it.
+ */
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    token: text('token').notNull().unique(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index('sessions_user_id_idx').on(table.userId)],
+);
+
+/**
+ * Credentials and linked providers. `password` holds the hash for the
+ * email-and-password provider, which is why nothing may select this table
+ * outside the auth layer.
+ */
+export const accounts = pgTable(
+  'accounts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    accountId: text('account_id').notNull(),
+    providerId: text('provider_id').notNull(),
+    accessToken: text('access_token'),
+    refreshToken: text('refresh_token'),
+    idToken: text('id_token'),
+    accessTokenExpiresAt: timestamp('access_token_expires_at', {
+      withTimezone: true,
+    }),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at', {
+      withTimezone: true,
+    }),
+    scope: text('scope'),
+    password: text('password'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index('accounts_user_id_idx').on(table.userId),
+    unique('accounts_provider_id_account_id_key').on(
+      table.providerId,
+      table.accountId,
+    ),
+  ],
+);
+
+/** Short-lived tokens for email verification and password reset. */
+export const verifications = pgTable(
+  'verifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    identifier: text('identifier').notNull(),
+    value: text('value').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index('verifications_identifier_idx').on(table.identifier)],
+);
