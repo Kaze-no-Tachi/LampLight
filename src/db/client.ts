@@ -68,6 +68,26 @@ export function getTenantDb(tenantId: string): TenantDb {
   };
 }
 
+/**
+ * Health probe for the container HEALTHCHECK and /api/health.
+ *
+ * Reads `tenants`, which is deliberate. A bare `select 1` proves only that a
+ * socket opened. Counting a real table proves the connection authenticated,
+ * the schema is migrated, and the application role still holds its grants,
+ * which are the three ways this actually breaks in production.
+ *
+ * `tenants` is a global table with no RLS policy, so this needs no tenant
+ * context and is not a tenant read path.
+ */
+export async function checkDatabaseHealth(): Promise<boolean> {
+  try {
+    await getDatabase().execute(sql`select count(*) from tenants`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Closes the pool. Used by tests and by graceful shutdown, not by requests. */
 export async function closeDb(): Promise<void> {
   if (pool) {
