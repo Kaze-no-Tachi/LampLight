@@ -64,21 +64,12 @@ export function ProvisionForm() {
           <span className="text-muted-foreground">
             Admin: {result.adminEmail}
           </span>
-          {result.setupUrl ? (
-            <span className="flex flex-col gap-1">
-              <span>Single-use setup link, send this to the admin:</span>
-              <code className="font-mono break-all">{result.setupUrl}</code>
-              <span className="text-muted-foreground">
-                It expires, is good once, and lets them choose a password you
-                never see.
-              </span>
-            </span>
-          ) : (
-            <span className="text-muted-foreground">
-              That address already had an account, so its credentials were left
-              untouched and no setup link was issued.
-            </span>
-          )}
+          <span className="text-muted-foreground">
+            A single-use invitation has been emailed to that address. It is not
+            shown here and you cannot retrieve it: the link goes from the mail
+            server to their mailbox, and the password they choose is one you
+            never see. Provision again to reissue it.
+          </span>
         </div>
       )}
     </form>

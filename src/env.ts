@@ -45,24 +45,24 @@ const envSchema = z.object({
   // Auth (phase 2).
   BETTER_AUTH_SECRET: z.string().min(32).optional(),
   /**
-   * Self-serve signup. Off by default, and that default is a security
-   * decision rather than caution.
+   * The platform kill switch for self-serve signup.
    *
-   * P0-5 requires that signup never reveal whether an address already holds an
-   * account elsewhere on the platform. The response can be made uniform, and
-   * is, but an attacker can still sign up and then try to sign in with the
-   * password they just chose: success means the address was new. Closing that
-   * requires activating nothing until a link sent to the address is followed,
-   * which requires mail delivery, which the PRD schedules as P1.
+   * This used to default to false, because signup created accounts and an
+   * attacker could therefore submit an address and then test the password they
+   * had just chosen: success meant the address was new. That is gone. Signup
+   * now creates an invitation and mails a link, activating nothing, so there
+   * is no longer anything to probe and no reason for the platform to refuse
+   * the feature outright.
    *
-   * So until mail exists, an open signup form cannot satisfy a P0. With this
-   * off the endpoint accepts the request, changes nothing, and answers exactly
-   * as it does when it is on, so no configuration of this flag is
-   * distinguishable from the outside.
+   * Turning it on does not open signup anywhere. tenant_settings.signup_mode
+   * is the institute's own decision and defaults to closed, and both gates
+   * must agree. This one exists so an operator can stop every institute at
+   * once without editing anybody's settings, and so that restoring it restores
+   * each institute's choice rather than a blanket one.
    */
   SELF_SERVE_SIGNUP: z
     .enum(['true', 'false'])
-    .default('false')
+    .default('true')
     .transform((value) => value === 'true'),
   BETTER_AUTH_URL: z.string().url().optional(),
 
@@ -200,7 +200,16 @@ export function assertPlatformConfig(): void {
   // Account creation ends at a link sent to the address, so an instance
   // without a transport can issue invitations that nobody can ever act on.
   // Refusing to serve is better than accepting signups into a void.
-  if (!value.SMTP_HOST || !value.MAIL_FROM) {
+  //
+  // Scoped to MAIL_TRANSPORT=auto, which is the default and therefore the
+  // accident being guarded against: deploying without thinking about mail. An
+  // explicit MAIL_TRANSPORT is somebody saying what they want, which is a
+  // reasonable thing to allow for a staging box or a test server. The mail
+  // module logs a warning in that case, so it is loud without being fatal.
+  if (
+    value.MAIL_TRANSPORT === 'auto' &&
+    (!value.SMTP_HOST || !value.MAIL_FROM)
+  ) {
     throw new Error(
       'Invalid environment configuration:\n' +
         (!value.SMTP_HOST ? '  SMTP_HOST: required in production\n' : '') +

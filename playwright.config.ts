@@ -56,6 +56,13 @@ export default defineConfig({
       // path is the one worth asserting uniform responses against. The default
       // itself is covered in tests/unit/signup-gate.test.ts.
       SELF_SERVE_SIGNUP: 'true',
+      // `next start` runs in production, which refuses to serve without SMTP
+      // configured, because an instance that cannot deliver mail cannot let
+      // anybody finish creating an account. That guard is working as intended,
+      // so the test server states a choice instead of having the guard
+      // relaxed for it: mail goes to the log. Nothing in the suite reads it,
+      // since activation tokens are planted directly (tests/helpers/invite.ts).
+      MAIL_TRANSPORT: 'console',
     },
   },
 });

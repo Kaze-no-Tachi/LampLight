@@ -97,6 +97,25 @@ describe('environment validation', () => {
     expect(() => assertPlatformConfig()).toThrow(/SMTP_HOST/);
   });
 
+  it('allows an explicit transport choice in production', async () => {
+    // The guard is aimed at deploying without thinking about mail, which is
+    // the default MAIL_TRANSPORT=auto with nothing configured. Naming a
+    // transport is somebody stating what they want, which a staging box or a
+    // test server legitimately does. The mail module warns instead.
+    stub({
+      ...PLATFORM_PRODUCTION,
+      SMTP_HOST: '',
+      MAIL_FROM: '',
+      MAIL_TRANSPORT: 'console',
+      CLOUDFLARE_API_TOKEN: 'token',
+      CLOUDFLARE_ZONE_ID: 'zone',
+      CLOUDFLARE_SAAS_FALLBACK_ORIGIN: 'origin.lamplight.school',
+    });
+    const { assertPlatformConfig } = await import('@/env');
+
+    expect(() => assertPlatformConfig()).not.toThrow();
+  });
+
   it('lets the migrator boot in production without mail configured', async () => {
     // Same split as Cloudflare: tooling parses, only the app asserts.
     stub({ ...PLATFORM_PRODUCTION, SMTP_HOST: '', MAIL_FROM: '' });

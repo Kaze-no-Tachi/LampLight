@@ -68,7 +68,7 @@ export function getTenantDb(tenantId: string): TenantDb {
   };
 }
 
-export type ResolvedTenant = { id: string; slug: string };
+export type ResolvedTenant = { id: string; slug: string; name: string };
 
 /**
  * THE BOOTSTRAP READS. There are exactly two, and they live here rather than
@@ -100,21 +100,30 @@ export async function lookupTenantByHost(
   const result = await getDatabase().execute<{
     tenant_id: string;
     tenant_slug: string;
-  }>(sql`select tenant_id, tenant_slug from resolve_tenant_by_host(${host})`);
+    tenant_name: string;
+  }>(
+    sql`select tenant_id, tenant_slug, tenant_name from resolve_tenant_by_host(${host})`,
+  );
 
   const row = result.rows[0];
-  return row ? { id: row.tenant_id, slug: row.tenant_slug } : null;
+  return row
+    ? { id: row.tenant_id, slug: row.tenant_slug, name: row.tenant_name }
+    : null;
 }
 
 export async function lookupTenantBySlug(
   slug: string,
 ): Promise<ResolvedTenant | null> {
-  const result = await getDatabase().execute<{ id: string; slug: string }>(
-    sql`select id, slug from tenants where slug = ${slug} and status = 'active' limit 1`,
+  const result = await getDatabase().execute<{
+    id: string;
+    slug: string;
+    name: string;
+  }>(
+    sql`select id, slug, name from tenants where slug = ${slug} and status = 'active' limit 1`,
   );
 
   const row = result.rows[0];
-  return row ? { id: row.id, slug: row.slug } : null;
+  return row ? { id: row.id, slug: row.slug, name: row.name } : null;
 }
 
 /**
@@ -134,6 +143,42 @@ export async function isPlatformAdmin(userId: string): Promise<boolean> {
     sql`select exists(select 1 from platform_admins where user_id = ${userId}) as exists`,
   );
   return result.rows[0]?.exists === true;
+}
+
+export type GlobalAccount = { id: string; emailVerified: boolean };
+
+/**
+ * Finds the account holding an address, anywhere on the platform.
+ *
+ * THE MOST DANGEROUS ANSWER IN THE CODEBASE. Read before calling.
+ *
+ * `users` is global, so this crosses every institute by construction. Whether
+ * a row comes back is exactly the fact PRD requirement P0-5 says must never
+ * reach a visitor: knowing an address is registered tells you that person
+ * studies somewhere on this platform, and over a list of addresses that is a
+ * roster of a competitor's students.
+ *
+ * So the rule for callers is absolute. The result may decide which message is
+ * sent to that address, and it may decide what somebody who already proved
+ * control of that mailbox is shown. It must never change what an anonymous
+ * caller can observe: not a status code, not a response body, not a redirect.
+ *
+ * It is here beside the other exceptions rather than in a repository because
+ * repositories take a TenantScope and this deliberately has none.
+ */
+export async function findAccountByEmail(
+  email: string,
+): Promise<GlobalAccount | null> {
+  const result = await getDatabase().execute<{
+    id: string;
+    email_verified: boolean;
+  }>(
+    sql`select id, email_verified from users
+        where email = ${email.trim().toLowerCase()} limit 1`,
+  );
+
+  const row = result.rows[0];
+  return row ? { id: row.id, emailVerified: row.email_verified } : null;
 }
 
 /**

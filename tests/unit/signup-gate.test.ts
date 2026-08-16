@@ -1,14 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * Self-serve signup is disabled by default, and that default is what makes
- * P0-5 true today.
+ * Signup is gated twice, and the two gates are not interchangeable.
  *
- * The response can be made uniform, and is, but an attacker who can sign up
- * can still test the password they chose: success means the address was new.
- * Only email verification closes that, and mail delivery is P1 while the
- * property it protects is P0. So until mail exists the endpoint changes
- * nothing, and answers identically either way so the setting is not probeable.
+ * SELF_SERVE_SIGNUP is the platform kill switch, on by default now that
+ * signup creates an invitation rather than an account. It defaulted to false
+ * while signup created accounts, because an attacker could submit an address
+ * and then test the password they had just chosen: success meant the address
+ * was new. Deferring activation removed the difference, so the reason for the
+ * default went with it.
+ *
+ * tenant_settings.signup_mode is the institute's own decision and defaults to
+ * closed. That is the gate that actually keeps strangers out, and it is the
+ * one that stays shut until an institute says otherwise. Its default is
+ * asserted in tests/unit/seed-data.test.ts against the schema, and its effect
+ * on the endpoint is covered end to end by the Playwright suite.
  */
 
 const BASE = {
@@ -22,24 +28,26 @@ afterEach(() => {
   vi.resetModules();
 });
 
-describe('self-serve signup flag', () => {
-  it('is off unless explicitly enabled', async () => {
+describe('the platform signup kill switch', () => {
+  it('is on by default, because the oracle it guarded is closed', async () => {
     for (const [key, value] of Object.entries(BASE)) vi.stubEnv(key, value);
     const { getEnv } = await import('@/env');
-    expect(getEnv().SELF_SERVE_SIGNUP).toBe(false);
+    expect(getEnv().SELF_SERVE_SIGNUP).toBe(true);
   });
 
-  it('stays off for any value other than the exact string "true"', async () => {
+  it('turns every institute off at once when set to false', async () => {
     for (const [key, value] of Object.entries(BASE)) vi.stubEnv(key, value);
     vi.stubEnv('SELF_SERVE_SIGNUP', 'false');
     const { getEnv } = await import('@/env');
     expect(getEnv().SELF_SERVE_SIGNUP).toBe(false);
   });
 
-  it('can be turned on once mail delivery exists', async () => {
+  it('accepts only the exact strings, so a typo fails loudly', async () => {
+    // A permissive coercion here would read "no" or "0" as true, which is the
+    // wrong direction to be wrong in for a switch that opens signup.
     for (const [key, value] of Object.entries(BASE)) vi.stubEnv(key, value);
-    vi.stubEnv('SELF_SERVE_SIGNUP', 'true');
+    vi.stubEnv('SELF_SERVE_SIGNUP', 'no');
     const { getEnv } = await import('@/env');
-    expect(getEnv().SELF_SERVE_SIGNUP).toBe(true);
+    expect(() => getEnv()).toThrow(/SELF_SERVE_SIGNUP/);
   });
 });

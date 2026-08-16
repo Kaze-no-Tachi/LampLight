@@ -139,7 +139,21 @@ export function drainOutbox(): SentMail[] {
 }
 
 function createTransport(env: Env): MailTransport {
-  switch (resolveTransportKind(env)) {
+  const kind = resolveTransportKind(env);
+
+  // Reachable only by setting MAIL_TRANSPORT explicitly, since the automatic
+  // choice in production is smtp and env validation refuses to serve without
+  // it. Somebody did that deliberately, so this is a warning rather than a
+  // refusal, but a production instance that is not delivering mail is one
+  // where nobody can finish creating an account.
+  if (env.NODE_ENV === 'production' && kind !== 'smtp') {
+    process.stderr.write(
+      `[mail] WARNING: MAIL_TRANSPORT is "${kind}" in production. ` +
+        'No mail will be delivered, so no invitation can be acted on.\n',
+    );
+  }
+
+  switch (kind) {
     case 'smtp':
       return createSmtpTransport(env);
     case 'memory':

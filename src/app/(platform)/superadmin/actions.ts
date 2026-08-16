@@ -1,21 +1,21 @@
 'use server';
 
-import { randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { getAdminDb } from '@/db/admin';
 import {
   auditLog,
-  memberships,
+  signupInvitations,
   tenantBilling,
   tenantDomains,
   tenantSettings,
   tenants,
-  users,
 } from '@/db/schema';
-import { getAuth, takeSetupLink } from '@/lib/auth';
+import { activationPath, mintInvitationToken } from '@/lib/auth/invitations';
 import { requirePlatformAdmin } from '@/lib/auth/guards';
-import { isValidSlug } from '@/lib/tenancy/host';
+import { sendMail } from '@/lib/mail';
+import { adminInviteEmail } from '@/lib/mail/messages';
+import { absoluteUrl, isValidSlug } from '@/lib/tenancy/host';
 import { invalidateTenantCache } from '@/lib/tenancy/resolve';
 import { getEnv } from '@/env';
 
@@ -38,7 +38,6 @@ export type ProvisionResult =
       slug: string;
       host: string;
       adminEmail: string;
-      setupUrl: string | null;
     }
   | { status: 'error'; message: string };
 
@@ -82,62 +81,33 @@ export async function provisionTenant(
   const env = getEnv();
   const host = `${slug}.${env.TENANT_SUBDOMAIN_ROOT}`;
 
-  // The invited admin needs a way in, and email delivery is P1 work.
+  // HOW THE FIRST ADMIN GETS IN
   //
-  // The operator is handed a single-use expiring link, never a password. That
-  // matters: a password the operator has seen is a credential two people know,
-  // it survives in whatever they pasted it into, and the admin has no way to
-  // be sure it was never used. A reset link is consumed once, expires, and
-  // ends with the admin choosing a secret the operator never learns.
+  // They are invited, exactly as a student is. Provisioning creates no account,
+  // sets no password, and writes no membership. It records an invitation with
+  // role 'admin' and mails the link to the address, and the account comes into
+  // being when that link is followed.
   //
-  // When the address already has an account, no link is issued and nothing
-  // about their credentials is touched. Provisioning must never become a way
-  // to seize an existing identity by naming it.
-  const priorUser = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, adminEmail))
-    .limit(1);
-
-  let adminUserId = priorUser[0]?.id ?? null;
-  let setupUrl: string | null = null;
-  const accountCreated = !adminUserId;
-
-  if (!adminUserId) {
-    // A random password nobody ever sees, immediately superseded by the reset
-    // link below. The account cannot be signed into until the admin sets their
-    // own, because this value is discarded here and never displayed or stored.
-    const placeholder = randomBytes(24).toString('base64url');
-    const created = await getAuth().api.signUpEmail({
-      body: {
-        email: adminEmail,
-        password: placeholder,
-        name: adminEmail.split('@')[0] ?? 'Institute Admin',
-      },
-      asResponse: false,
-    });
-    adminUserId = created?.user?.id ?? null;
-
-    if (!adminUserId) {
-      return {
-        status: 'error',
-        message: 'Could not create the admin account.',
-      };
-    }
-
-    await getAuth().api.requestPasswordReset({
-      body: { email: adminEmail, redirectTo: `https://${host}/set-password` },
-    });
-
-    // The captured URL is built against Better Auth's configured base, which
-    // is a single value and therefore cannot be right for every institute.
-    // The token is what matters, so it is lifted out and the link rebuilt
-    // against this tenant's own host. Otherwise the operator would be handed a
-    // localhost link, or worse, a link on some other institute's domain.
-    setupUrl = rebuildSetupLink(takeSetupLink(adminEmail), host);
-  }
-
+  // Three things follow from that, all of them wanted:
+  //
+  //   The operator never sees a credential. A password an operator has seen is
+  //   a secret two people know, it survives in whatever they pasted it into,
+  //   and the admin can never be sure it went unused. Here the link goes from
+  //   the mail server to the mailbox and the operator is not in the path.
+  //
+  //   Naming an address does not seize it. If the address already holds an
+  //   account, nothing about it changes. The invitation still goes out, and
+  //   its owner becomes an admin here only after signing in as themselves.
+  //
+  //   There is one activation path in the codebase, not two. Provisioning and
+  //   self-serve signup end at the same route, so the rules about single use,
+  //   expiry, and email verification are written once.
+  //
+  // The invitation is written with the cross-tenant client because the tenant
+  // it belongs to is being created in this very transaction, so there is no
+  // tenant scope to establish yet.
   const tenantId = crypto.randomUUID();
+  const invite = mintInvitationToken();
 
   await db.transaction(async (tx) => {
     await tx
@@ -157,10 +127,12 @@ export async function provisionTenant(
       verifiedAt: new Date(),
     });
 
-    await tx.insert(memberships).values({
+    await tx.insert(signupInvitations).values({
       tenantId,
-      userId: adminUserId,
+      email: adminEmail,
       role: 'admin',
+      tokenHash: invite.tokenHash,
+      expiresAt: invite.expiresAt,
     });
 
     await tx.insert(auditLog).values({
@@ -169,20 +141,28 @@ export async function provisionTenant(
       action: 'tenant.provisioned',
       targetType: 'tenant',
       targetId: tenantId,
-      metadataJson: {
-        slug,
-        host,
-        adminEmail,
-        adminAccountCreated: accountCreated,
-      },
+      metadataJson: { slug, host, adminEmail },
     });
   });
+
+  // After the commit, so a mail failure cannot leave an institute half created.
+  // It can leave one created with no invitation delivered, which is the right
+  // way round: provisioning again reissues the link, whereas a rolled back
+  // institute with a delivered link would be a link to nowhere.
+  await sendMail(
+    adminInviteEmail({
+      to: adminEmail,
+      institute: name,
+      url: absoluteUrl(host, activationPath(invite.token)),
+      expiresAt: invite.expiresAt,
+    }),
+  );
 
   // Misses are cached, so the new host would 404 for a few seconds otherwise.
   invalidateTenantCache(host);
   revalidatePath('/superadmin');
 
-  return { status: 'ok', slug, host, adminEmail, setupUrl };
+  return { status: 'ok', slug, host, adminEmail };
 }
 
 export type TenantSummary = {
@@ -222,29 +202,4 @@ export async function listTenants(): Promise<TenantSummary[]> {
   }
 
   return [...byId.values()].sort((a, b) => a.slug.localeCompare(b.slug));
-}
-
-/**
- * Rebuilds a captured reset link against the tenant's own hostname.
- *
- * Returns null rather than a wrong link if the shape is not what is expected,
- * because a setup link pointing at the wrong host is worse than none: it would
- * send a new institute's admin to somebody else's domain to type a password.
- */
-function rebuildSetupLink(
-  captured: string | null,
-  host: string,
-): string | null {
-  if (!captured) return null;
-
-  try {
-    const parsed = new URL(captured);
-    const token = parsed.pathname.split('/').filter(Boolean).pop();
-    if (!token) return null;
-
-    const callback = encodeURIComponent(`https://${host}/set-password`);
-    return `https://${host}/api/auth/reset-password/${token}?callbackURL=${callback}`;
-  } catch {
-    return null;
-  }
 }

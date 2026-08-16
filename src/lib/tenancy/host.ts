@@ -96,3 +96,27 @@ export function classifyHost(
 export function isValidSlug(slug: string): boolean {
   return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(slug);
 }
+
+/**
+ * Builds an absolute URL on a given host.
+ *
+ * Links in mail have to be absolute, and they have to point at the institute
+ * the person is joining rather than at whatever base URL the auth library was
+ * configured with. That configuration is a single value and therefore cannot
+ * be right for more than one institute, which is exactly how an invitation
+ * ends up sending someone to another institute's domain to type a password.
+ *
+ * Scheme is derived rather than configured: loopback and .localhost get http
+ * because nothing local terminates TLS, everything else gets https because
+ * every real deployment sits behind Cloudflare or Caddy.
+ */
+export function absoluteUrl(host: string, path: string): string {
+  const hostname = host.split(':')[0] ?? host;
+  const local =
+    hostname === 'localhost' ||
+    hostname.endsWith('.localhost') ||
+    hostname === '127.0.0.1' ||
+    hostname === '[::1]';
+
+  return `${local ? 'http' : 'https'}://${host}${path}`;
+}

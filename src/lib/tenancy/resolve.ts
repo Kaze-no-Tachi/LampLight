@@ -15,6 +15,8 @@ import { classifyHost, isValidSlug, normalizeHost } from './host';
 export type TenantContext = {
   readonly id: string;
   readonly slug: string;
+  /** The institute's display name, for page titles, headers, and mail. */
+  readonly name: string;
   /** The normalized host the request arrived on. */
   readonly host: string;
 };

@@ -36,6 +36,13 @@
       "when": 1786881542277,
       "tag": "0004_signup_invitations",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786881774883,
+      "tag": "0005_tenant_name_in_resolution",
+      "breakpoints": true
     }
   ]
 }

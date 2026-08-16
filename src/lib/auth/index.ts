@@ -29,34 +29,6 @@ import * as schema from '@/db/schema';
  * holds accounts at both.
  */
 
-/**
- * Holds the most recent password-setup link per address, briefly.
- *
- * This exists only because there is no mail transport yet. It is deliberately
- * short-lived and in-process, which means it works for an operator clicking
- * provision on a single instance and would not survive a restart or a second
- * replica. That limitation is acceptable for the one flow that uses it, and it
- * disappears entirely once sendResetPassword actually sends.
- */
-const setupLinks = new Map<string, { url: string; expiresAt: number }>();
-const SETUP_LINK_TTL_MS = 60_000;
-
-function stashSetupLink(email: string, url: string): void {
-  setupLinks.set(email.toLowerCase(), {
-    url,
-    expiresAt: Date.now() + SETUP_LINK_TTL_MS,
-  });
-}
-
-/** Reads and clears the link. Single use, so it cannot be replayed. */
-export function takeSetupLink(email: string): string | null {
-  const key = email.toLowerCase();
-  const entry = setupLinks.get(key);
-  setupLinks.delete(key);
-  if (!entry || entry.expiresAt <= Date.now()) return null;
-  return entry.url;
-}
-
 function createAuth() {
   const env = getEnv();
 
@@ -79,29 +51,63 @@ function createAuth() {
 
     emailAndPassword: {
       enabled: true,
-      // Verification email delivery lands with the notifications work in P1.
-      // Until then an unverified address can still sign in, which is fine for
-      // a platform where an admin grants access rather than self-serve.
-      requireEmailVerification: false,
-      minPasswordLength: 12,
-
       /**
-       * Captures the reset link instead of emailing it.
+       * An unverified address cannot sign in.
        *
-       * Provisioning needs to hand a new institute admin a way to set their
-       * own password, and there is no mail transport yet. Rather than invent a
-       * second token scheme, this reuses Better Auth's tested reset flow and
-       * intercepts the URL so the operator can pass it on out of band.
+       * Every account on the platform comes into being by following a link
+       * that was mailed to its address, and activation marks the address
+       * verified at the same moment it writes the membership, so there is no
+       * legitimate way to hold an unverified account and no reason to let one
+       * sign in.
        *
-       * When mail delivery lands this callback sends instead of stashing, and
-       * nothing else about the flow changes.
+       * It also removes the last remnant of the account-existence oracle. If
+       * an unverified account could sign in, an attacker who created one for
+       * somebody else's address would learn from the attempt whether that
+       * address was already taken. Now the attempt fails either way.
+       *
+       * Better Auth would ordinarily send its own verification mail on a
+       * blocked sign-in. There is nothing to send: the address either has a
+       * pending invitation, in which case the link is already in the mailbox,
+       * or it does not, in which case there is no account.
        */
-      sendResetPassword: async ({ user, url }) => {
-        stashSetupLink(user.email, url);
-      },
+      requireEmailVerification: true,
+      minPasswordLength: 12,
     },
 
     advanced: {
+      /**
+       * WHERE THE CLIENT IP COMES FROM, AND WHY IT IS NOT THE SOCKET.
+       *
+       * Better Auth rate limits by IP, and applies a much tighter rule to
+       * sign-in than to everything else. Left alone it reads the socket
+       * address, and this application never sees a real one: in platform mode
+       * every request arrives through the Cloudflare tunnel connector, and in
+       * self-host mode through Caddy on the same box. So every person on the
+       * platform would share one bucket, and a handful of sign-ins anywhere
+       * would lock out every institute at once. That is a denial of service
+       * with no attacker required.
+       *
+       * The header named here is set by the proxy in front of us, and it is
+       * the only way in: the platform box has 80 and 443 closed and reaches
+       * the world only through the outbound tunnel, and the self-host stack
+       * publishes Caddy rather than the application. A client-supplied value
+       * cannot arrive unmediated, and Cloudflare overwrites CF-Connecting-IP
+       * on the way through, so the value here is the proxy's word rather than
+       * the caller's.
+       *
+       * If that ever stops being true, that a request can reach this process
+       * without passing the proxy, then this header becomes attacker
+       * controlled and rate limiting becomes bypassable by setting it. The
+       * closed ports are what make this safe, so they are part of the security
+       * model rather than a hardening nicety. See docs/runbook.md section 1.1.
+       */
+      ipAddress: {
+        ipAddressHeaders:
+          env.TENANCY_MODE === 'platform'
+            ? ['cf-connecting-ip']
+            : ['x-forwarded-for'],
+      },
+
       database: {
         // Better Auth generates opaque string ids by default, and every id
         // column here is a uuid. Generating uuids keeps the column type honest
