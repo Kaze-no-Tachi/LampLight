@@ -18,9 +18,10 @@ first-class case, not an afterthought.
 
 ## Status
 
-Phase 1 of 9: foundation. The data layer, tenant isolation, and the test
-harness that guards it. **There is no user-facing application yet.** No auth,
-no routing, no catalog, no payments. See [Roadmap](#roadmap).
+Phase 1 of 9: foundation. The data layer, tenant isolation, the test harness
+that guards it, and the deployment topology. **There is no user-facing
+application yet.** No auth, no routing, no catalog, no payments. See
+[Roadmap](#roadmap).
 
 ## What makes this project unusual
 
@@ -160,6 +161,53 @@ Two rules the CI enforces rather than trusts:
 2. **A new tenant-owned table is added to `src/db/tenant-tables.ts` and given
    an RLS policy in the migration.** Add a table with a `tenant_id` column and
    skip either, and CI fails.
+
+## Deployment
+
+Three stacks, one codebase.
+
+| File                          | For                        | What runs                   |
+| ----------------------------- | -------------------------- | --------------------------- |
+| `docker-compose.yml`          | Local development          | Postgres, Minio             |
+| `docker-compose.prod.yml`     | The hosted platform        | App, Postgres, cloudflared  |
+| `docker-compose.selfhost.yml` | One institute, self-hosted | App, Postgres, Minio, Caddy |
+
+### Self-hosting a single institute
+
+```bash
+cp .env.example .env     # set SELFHOST_DOMAIN, ACME_EMAIL, and the passwords
+docker compose -f docker-compose.selfhost.yml --profile tools run --rm migrate
+docker compose -f docker-compose.selfhost.yml up -d
+```
+
+Point your domain's DNS at the box. Caddy obtains and renews the certificate
+itself, so there is no cron job and nothing to remember. No Cloudflare account,
+no Stripe Connect, no platform dependency: `TENANCY_MODE=single` pins one tenant
+and skips Host header resolution entirely, and `PAYMENTS_MODE=direct` charges on
+your own Stripe account with no application fee.
+
+### The hosted platform
+
+A single VPS running Docker Compose, with Postgres on the same box and
+Cloudflare Tunnel as the only way in. Full procedures are in
+[`docs/runbook.md`](docs/runbook.md); the reasoning is in
+[ADR 0004](docs/adr/0004-single-vps-docker-compose-hosting.md).
+
+Two decisions there are worth knowing before you read the config, because both
+look wrong until you know why:
+
+**No inbound ports.** Not 80, not 443. Cloudflare for SaaS sends the tenant's
+own hostname as the TLS SNI, so any public listener gets asked for a
+certificate for `institute.edu`, which it cannot obtain. A tunnel has no
+inbound listener, so the problem does not exist rather than being mitigated.
+The box also never publishes its IP.
+
+**Postgres is on the box, not managed.** `FORCE ROW LEVEL SECURITY` means the
+superadmin path needs a role holding `BYPASSRLS`, and granting that needs
+superuser, which managed providers do not offer. Owning the machine is what
+keeps the isolation model in ADR 0002 working as designed rather than needing a
+weaker substitute. The trade is that backups are ours: see the restore drill in
+the runbook, which is a release blocker.
 
 ## Roadmap
 
