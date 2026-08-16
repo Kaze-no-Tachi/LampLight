@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { getTenantDb } from '@/db/client';
 import { memberships, signupInvitations, users } from '@/db/schema';
 import type { TenantScope } from '@/db/scope';
@@ -358,4 +358,71 @@ async function markAddressProven(
       updatedAt: new Date(),
     })
     .where(eq(users.id, userId));
+}
+
+/**
+ * How long a spent invitation is kept.
+ *
+ * Ninety days, and the number is a data-minimisation decision rather than a
+ * technical one. A consumed row is the only record of how a particular person
+ * came to be a member and what they were asked at the time, which an institute
+ * may legitimately want to look back at. After that the membership itself is
+ * the record: the answers were copied onto it at activation, so nothing unique
+ * is lost by deleting the invitation.
+ */
+const CONSUMED_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+
+export type InvitationSweepResult = {
+  /** Unconsumed and past their expiry. Dead credentials, and PII for people who never became users. */
+  readonly expired: number;
+  /** Consumed longer ago than the retention window. */
+  readonly spent: number;
+};
+
+/**
+ * Deletes invitations that have outlived their purpose.
+ *
+ * Expired unconsumed rows are the ones that matter. They stop working on
+ * schedule, so this is not about access, it is about what the table holds: an
+ * address, a name, and whatever an institute asked at signup, belonging to
+ * somebody who never became a user and never will. Keeping that indefinitely
+ * because nothing forced us to delete it is the wrong default for a platform
+ * holding student records for several legal entities.
+ *
+ * Tenant scoped like everything else, so the sweep runs per institute and one
+ * institute's retention cannot reach another's rows.
+ */
+export async function sweepInvitations(
+  tenantId: string,
+): Promise<InvitationSweepResult> {
+  const now = Date.now();
+
+  return getTenantDb(tenantId).run(async (scope) => {
+    const expired = await scope.tx
+      .delete(signupInvitations)
+      .where(
+        and(
+          eq(signupInvitations.tenantId, scope.tenantId),
+          isNull(signupInvitations.consumedAt),
+          lt(signupInvitations.expiresAt, new Date(now)),
+        ),
+      )
+      .returning({ id: signupInvitations.id });
+
+    const spent = await scope.tx
+      .delete(signupInvitations)
+      .where(
+        and(
+          eq(signupInvitations.tenantId, scope.tenantId),
+          isNotNull(signupInvitations.consumedAt),
+          lt(
+            signupInvitations.consumedAt,
+            new Date(now - CONSUMED_RETENTION_MS),
+          ),
+        ),
+      )
+      .returning({ id: signupInvitations.id });
+
+    return { expired: expired.length, spent: spent.length };
+  });
 }

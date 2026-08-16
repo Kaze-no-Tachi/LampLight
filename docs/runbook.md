@@ -257,15 +257,8 @@ operator is not in the loop and does not need to be: the institute adds the
 hostname, creates the two DNS records shown, and the domain goes live once
 Cloudflare confirms them.
 
-What the operator owns is the sweep. Cron POSTs to the sweep endpoint, which
-polls Cloudflare for every unverified domain and releases claims that lapsed:
-
-```bash
-# Every ten minutes, on the VPS.
-*/10 * * * * curl -fsS -X POST \
-  -H "x-lamplight-sweep-secret: $DOMAIN_SWEEP_SECRET" \
-  https://<apex>/api/platform/domain-sweep >/dev/null
-```
+What the operator owns is the sweep, which is shared with the retention job
+below. See [section 4c](#4c-the-maintenance-sweep).
 
 Without it, a domain that verifies overnight goes live when an admin next opens
 the settings page rather than in the morning. That is a delay, not an outage,
@@ -282,6 +275,50 @@ secret too, so a 404 here means one of the two and the logs say which.
 | "Already managed elsewhere"                 | Another Cloudflare account holds that custom hostname. If it is theirs, they remove it there first. If it is an abandoned claim of ours, the sweep clears it within fourteen days. |
 | Live but visitors get a certificate warning | The hostname went active before the certificate did. This should be impossible (both are required), so check the sweep is running and the domain's status in the database.         |
 | Redirect loop between two of their domains  | Should not happen: the canonical redirect is 302 precisely so it is never cached. If it does, look for a proxy or CDN in front of us caching it anyway.                            |
+
+---
+
+## 4c. The maintenance sweep
+
+One cron line, one secret, two jobs:
+
+```bash
+# Every ten minutes, on the VPS.
+*/10 * * * * curl -fsS -X POST \
+  -H "x-lamplight-sweep-secret: $DOMAIN_SWEEP_SECRET" \
+  https://<apex>/api/platform/sweep >/dev/null
+```
+
+**Domains.** Polls Cloudflare for every unverified hostname and releases claims
+that lapsed. Skipped entirely when Cloudflare is not configured.
+
+**Invitations.** Deletes expired unconsumed invitations, and consumed ones
+older than ninety days. This runs whether or not Cloudflare is configured,
+including on a self-hosted instance, because retention should not depend on an
+unrelated integration being set up.
+
+That second job is why the sweep matters on a self-host box too. An expired
+unconsumed invitation holds an address, a name, and whatever the institute asks
+at signup, belonging to somebody who never became a user. Keeping it because
+nothing forced a deletion is the wrong default for a system holding student
+records.
+
+The response says what it did, which is the quickest way to tell a sweep that
+ran and had nothing to do from one that is not running at all:
+
+```json
+{
+  "status": "ok",
+  "tenants": 2,
+  "domains": { "refreshed": 3, "released": 0, "enabled": true },
+  "invitations": { "expired": 1, "spent": 0 },
+  "failed": 0
+}
+```
+
+`failed` counts institutes whose sweep threw. One institute's trouble does not
+stop the rest, so a non-zero count with a 200 response is a partial run, not a
+failure to run.
 
 ---
 

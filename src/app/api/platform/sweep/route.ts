@@ -1,13 +1,23 @@
 import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { listActiveTenantIds } from '@/db/client';
+import { sweepInvitations } from '@/lib/auth/invitations';
 import { customHostnamesConfigured } from '@/lib/cloudflare/custom-hostnames';
 import { refreshAllDomains, releaseLapsedClaims } from '@/lib/domains/service';
 import { getEnv } from '@/env';
 
 /**
- * Polls Cloudflare for every unverified domain on the platform, and releases
- * claims that have lapsed (PRD section 5.3, step 4).
+ * Periodic maintenance, run by cron.
+ *
+ * Two jobs today, and a home for the next one:
+ *
+ *   Domains. Poll Cloudflare for every unverified hostname and release claims
+ *   that have lapsed (PRD section 5.3, step 4).
+ *
+ *   Invitations. Delete the ones that have outlived their purpose. Expired
+ *   unconsumed rows hold an address, a name, and whatever an institute asked
+ *   at signup, belonging to somebody who never became a user, and keeping that
+ *   because nothing forced us to delete it is the wrong default here.
  *
  * WHY AN ENDPOINT RATHER THAN A SCHEDULER
  *
@@ -46,29 +56,46 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ status: 'not_found' }, { status: 404 });
   }
 
-  if (!customHostnamesConfigured()) {
-    return NextResponse.json({ status: 'not_configured' }, { status: 200 });
-  }
-
   const tenantIds = await listActiveTenantIds();
+  const domainsEnabled = customHostnamesConfigured();
+
   let refreshed = 0;
   let released = 0;
+  let expired = 0;
+  let spent = 0;
   let failed = 0;
 
   for (const tenantId of tenantIds) {
     try {
-      const domains = await refreshAllDomains(tenantId);
-      refreshed += domains.length;
-      released += await releaseLapsedClaims(tenantId);
+      // Invitation cleanup first, and outside the Cloudflare branch, because
+      // it has to happen on a self-hosted instance and on a platform whose
+      // Cloudflare credentials are missing. Tying data retention to an
+      // unrelated integration being configured is how a table quietly grows
+      // for a year.
+      const invitations = await sweepInvitations(tenantId);
+      expired += invitations.expired;
+      spent += invitations.spent;
+
+      if (domainsEnabled) {
+        const domains = await refreshAllDomains(tenantId);
+        refreshed += domains.length;
+        released += await releaseLapsedClaims(tenantId);
+      }
     } catch {
-      // One institute's Cloudflare trouble must not stop the sweep for the
-      // rest. The count is reported so a silent partial run is visible.
+      // One institute's trouble must not stop the sweep for the rest. The
+      // count is reported so a silent partial run is visible.
       failed += 1;
     }
   }
 
   return NextResponse.json(
-    { status: 'ok', tenants: tenantIds.length, refreshed, released, failed },
+    {
+      status: 'ok',
+      tenants: tenantIds.length,
+      domains: { refreshed, released, enabled: domainsEnabled },
+      invitations: { expired, spent },
+      failed,
+    },
     { status: 200 },
   );
 }

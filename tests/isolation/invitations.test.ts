@@ -11,6 +11,7 @@ import {
   hashToken,
   issueInvitation,
   mintInvitationToken,
+  sweepInvitations,
 } from '@/lib/auth/invitations';
 
 /**
@@ -334,5 +335,106 @@ describe('issuing', () => {
     // Inviting an institute's own administrator to a class must not strip
     // their administration of it.
     expect(after[0]?.role).toBe('admin');
+  });
+});
+
+describe('the retention sweep', () => {
+  it('deletes an expired invitation nobody ever used', async () => {
+    const email = await freshEmail();
+    const minted = mintInvitationToken();
+
+    await getAdminDb()
+      .insert(signupInvitations)
+      .values({
+        tenantId: GRACE.id,
+        email,
+        tokenHash: minted.tokenHash,
+        expiresAt: new Date(Date.now() - 1000),
+      });
+
+    const result = await sweepInvitations(GRACE.id);
+
+    // Not about access: it stopped working at expiry. It is about what the row
+    // holds, which is an address and a name belonging to somebody who never
+    // became a user and now never will.
+    expect(result.expired).toBe(1);
+    await expect(
+      findPendingInvitation(GRACE.id, minted.token),
+    ).resolves.toBeNull();
+  });
+
+  it('leaves a live invitation alone', async () => {
+    const email = await freshEmail();
+    await issueInvitation({
+      tenantId: GRACE.id,
+      host: HOST,
+      email,
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+    });
+
+    const result = await sweepInvitations(GRACE.id);
+    expect(result.expired).toBe(0);
+  });
+
+  it('keeps a recently consumed one, and drops an old one', async () => {
+    const recent = await freshEmail();
+    const ancient = await freshEmail();
+
+    await getAdminDb()
+      .insert(signupInvitations)
+      .values([
+        {
+          tenantId: GRACE.id,
+          email: recent,
+          tokenHash: mintInvitationToken().tokenHash,
+          expiresAt: new Date(Date.now() - 1000),
+          consumedAt: new Date(),
+        },
+        {
+          tenantId: GRACE.id,
+          email: ancient,
+          tokenHash: mintInvitationToken().tokenHash,
+          expiresAt: new Date(Date.now() - 1000),
+          // Older than the ninety day retention window.
+          consumedAt: new Date(Date.now() - 100 * 24 * 60 * 60 * 1000),
+        },
+      ]);
+
+    const result = await sweepInvitations(GRACE.id);
+
+    // A consumed row is how an institute can see that somebody was invited and
+    // what they were asked. After the window the membership is that record.
+    expect(result.spent).toBe(1);
+
+    const left = await getAdminDb()
+      .select({ email: signupInvitations.email })
+      .from(signupInvitations)
+      .where(eq(signupInvitations.tenantId, GRACE.id));
+    const addresses = left.map((row) => row.email);
+    expect(addresses).toContain(recent);
+    expect(addresses).not.toContain(ancient);
+  });
+
+  it('never reaches another institute rows', async () => {
+    const email = await freshEmail();
+    await getAdminDb()
+      .insert(signupInvitations)
+      .values({
+        tenantId: CORNERSTONE.id,
+        email,
+        tokenHash: mintInvitationToken().tokenHash,
+        expiresAt: new Date(Date.now() - 1000),
+      });
+
+    // Sweeping Grace must not touch Cornerstone, however expired the row is.
+    const result = await sweepInvitations(GRACE.id);
+    expect(result.expired).toBe(0);
+
+    const survived = await getAdminDb()
+      .select({ id: signupInvitations.id })
+      .from(signupInvitations)
+      .where(eq(signupInvitations.tenantId, CORNERSTONE.id));
+    expect(survived).toHaveLength(1);
   });
 });
