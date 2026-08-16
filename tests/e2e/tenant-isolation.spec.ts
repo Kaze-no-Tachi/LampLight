@@ -30,6 +30,9 @@ const APEX = 'lamplight.school';
 
 const PASSWORD = 'correct-horse-battery-staple';
 
+/** Satisfies Grace's seeded required question. Cornerstone asks nothing. */
+const ANSWERS = { congregation: 'Grace Chapel', track: 'Missions' };
+
 test.afterAll(async () => {
   await cleanupTestIdentities();
 });
@@ -57,7 +60,10 @@ async function signUp(
 ): Promise<number> {
   const response = await request.post('/api/tenant/sign-up', {
     headers: { host, 'content-type': 'application/json' },
-    data: { email, firstName: 'Test', lastName: 'Person' },
+    // Grace is seeded with a required question, so a submission that skips it
+    // is correctly refused. These tests are about the account-existence
+    // property, not about validation, so they answer it.
+    data: { email, firstName: 'Test', lastName: 'Person', answers: ANSWERS },
   });
   return response.status();
 }
@@ -223,14 +229,15 @@ test.describe('signup creates nothing', () => {
 
     const responses = [];
     for (const data of [
-      { email: fresh, firstName: 'A', lastName: 'B' },
+      { email: fresh, firstName: 'A', lastName: 'B', answers: ANSWERS },
       // Same address again, which hits the resend cooldown internally.
-      { email: fresh, firstName: 'A', lastName: 'B' },
+      { email: fresh, firstName: 'A', lastName: 'B', answers: ANSWERS },
       // Seeded, and already a member of both institutes.
       {
         email: 'shared.student@example.test',
         firstName: 'A',
         lastName: 'B',
+        answers: ANSWERS,
       },
     ]) {
       responses.push(
@@ -261,11 +268,16 @@ test.describe('signup creates nothing', () => {
 
     const open = await request.post('/api/tenant/sign-up', {
       headers: { host: GRACE, 'content-type': 'application/json' },
-      data: { email, firstName: 'A', lastName: 'B' },
+      data: { email, firstName: 'A', lastName: 'B', answers: ANSWERS },
     });
     const closed = await request.post('/api/tenant/sign-up', {
       headers: { host: CORNERSTONE, 'content-type': 'application/json' },
-      data: { email: testEmail('closed2'), firstName: 'A', lastName: 'B' },
+      data: {
+        email: testEmail('closed2'),
+        firstName: 'A',
+        lastName: 'B',
+        answers: ANSWERS,
+      },
     });
 
     expect(open.status()).toBe(closed.status());
@@ -277,7 +289,12 @@ test.describe('signup creates nothing', () => {
   }) => {
     const response = await request.post('/api/tenant/sign-up', {
       headers: { host: APEX, 'content-type': 'application/json' },
-      data: { email: testEmail('apex'), firstName: 'A', lastName: 'B' },
+      data: {
+        email: testEmail('apex'),
+        firstName: 'A',
+        lastName: 'B',
+        answers: ANSWERS,
+      },
     });
     expect(response.status()).toBe(404);
   });
@@ -481,5 +498,82 @@ test.describe('the canonical domain', () => {
     });
 
     expect(response.status()).toBe(200);
+  });
+});
+
+test.describe("an institute's own signup questions", () => {
+  test('are asked on the form and required by the endpoint', async ({
+    request,
+  }) => {
+    // Grace is seeded with a required "congregation" question. Submitting
+    // without it must be refused, or a required question is decoration.
+    const missing = await request.post('/api/tenant/sign-up', {
+      headers: { host: GRACE, 'content-type': 'application/json' },
+      data: {
+        email: testEmail('noanswer'),
+        firstName: 'Test',
+        lastName: 'Person',
+        answers: {},
+      },
+    });
+
+    expect(missing.status()).toBe(400);
+    const body = (await missing.json()) as { errors?: Record<string, string> };
+    expect(body.errors?.congregation).toBeTruthy();
+  });
+
+  test('refuse a choice that was never offered', async ({ request }) => {
+    // Without server-side checking, a select is a free text field that merely
+    // looks constrained, and an institute reading its own reports would find
+    // values it never offered.
+    const response = await request.post('/api/tenant/sign-up', {
+      headers: { host: GRACE, 'content-type': 'application/json' },
+      data: {
+        email: testEmail('badchoice'),
+        firstName: 'Test',
+        lastName: 'Person',
+        answers: { congregation: 'Grace Chapel', track: 'Invented' },
+      },
+    });
+
+    expect(response.status()).toBe(400);
+  });
+
+  test('accept a complete submission', async ({ request }) => {
+    const response = await request.post('/api/tenant/sign-up', {
+      headers: { host: GRACE, 'content-type': 'application/json' },
+      data: {
+        email: testEmail('answered'),
+        firstName: 'Test',
+        lastName: 'Person',
+        answers: { congregation: 'Grace Chapel', track: 'Missions' },
+      },
+    });
+
+    expect(response.status()).toBe(200);
+  });
+
+  test('are still not a way to survey which institutes are open', async ({
+    request,
+  }) => {
+    // Cornerstone is closed and asks nothing, so an empty submission is valid
+    // there and answers 200. Grace is open and asks a required question, so an
+    // empty submission is refused. Those differ, and they differ because of
+    // what each institute asks rather than because of whether it is open.
+    //
+    // The property being protected is that the mode itself is not reported.
+    // A submission that satisfies both institutes' questions gets the same
+    // answer from both, which is asserted in the uniformity test above.
+    const closed = await request.post('/api/tenant/sign-up', {
+      headers: { host: CORNERSTONE, 'content-type': 'application/json' },
+      data: {
+        email: testEmail('closedanswers'),
+        firstName: 'Test',
+        lastName: 'Person',
+        answers: {},
+      },
+    });
+
+    expect(closed.status()).toBe(200);
   });
 });

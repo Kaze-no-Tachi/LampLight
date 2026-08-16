@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { findAccountByEmail, getTenantDb } from '@/db/client';
 import { tenantSettings } from '@/db/schema';
 import { issueInvitation } from '@/lib/auth/invitations';
+import { parseQuestions, validateAnswers } from '@/lib/signup/questions';
 import { sendMail } from '@/lib/mail';
 import { activationEmail, existingAccountEmail } from '@/lib/mail/messages';
 import { getTenant } from '@/lib/tenancy/context';
@@ -95,35 +96,70 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ status: 'invalid' }, { status: 400 });
   }
 
-  // Failures past this point are swallowed rather than surfaced. A 500 on one
-  // branch and a 200 on another would rebuild the oracle out of error codes.
-  try {
-    await maybeInvite(tenant, { email, firstName, lastName, answers });
-  } catch {
-    // Nothing to report to the caller by design. An invitation that failed to
-    // issue means no mail arrives, which is the same thing the caller sees
-    // when the address is not one that can be registered here.
+  const settings = await readSignupSettings(tenant.id);
+
+  // Answers are validated whatever the institute's signup mode is, and that
+  // ordering is deliberate.
+  //
+  // Validating only when signup is open would make this endpoint report the
+  // mode: submit a deliberately incomplete answer and an open institute says
+  // 400 while a closed one says 200. Which institutes take students is exactly
+  // the kind of thing a competitor would like to survey, and it is not
+  // something a signup endpoint should be answering.
+  //
+  // The cost is that a closed institute's question list can be probed, which
+  // is a list of questions it would publish the moment it opened, and is empty
+  // for any institute that has never configured one.
+  //
+  // Validation runs against the stored list rather than against whatever the
+  // form claimed to be asking, since a caller who never loaded the form can
+  // send anything. Keys not on the list are dropped, so this is not a way to
+  // write arbitrary data into a membership's profile.
+  const validated = validateAnswers(settings.questions, answers);
+  if (!validated.ok) {
+    // Safe to name the fields, and worth doing: silently discarding a
+    // submission that missed a required question leaves a real applicant
+    // waiting for an email that will never arrive.
+    return NextResponse.json(
+      { status: 'invalid', errors: validated.errors },
+      { status: 400 },
+    );
+  }
+
+  // Two gates, both of which must agree. SELF_SERVE_SIGNUP is the platform
+  // kill switch and signup_mode is the institute's own decision, so an
+  // operator can stop every institute at once without editing anybody's
+  // settings, and restoring the switch restores each institute's own choice.
+  if (getEnv().SELF_SERVE_SIGNUP && settings.open) {
+    // Failures past this point are swallowed rather than surfaced. A 500 on
+    // one branch and a 200 on another would rebuild the oracle out of error
+    // codes.
+    try {
+      await invite(tenant, {
+        email,
+        firstName,
+        lastName,
+        answers: validated.answers,
+      });
+    } catch {
+      // Nothing to report by design. An invitation that failed to issue means
+      // no mail arrives, which is what the caller sees anyway when the address
+      // is not one that can be registered here.
+    }
   }
 
   return NextResponse.json(UNIFORM_RESPONSE, { status: 200 });
 }
 
-async function maybeInvite(
+async function invite(
   tenant: TenantContext,
   submission: {
     email: string;
     firstName: string;
     lastName: string;
-    answers: Record<string, unknown>;
+    answers: Record<string, string | boolean>;
   },
 ): Promise<void> {
-  // Two gates, both of which must agree. SELF_SERVE_SIGNUP is the platform
-  // kill switch and signup_mode is the institute's own decision, so an
-  // operator can stop every institute at once without editing anybody's
-  // settings, and restoring the switch restores each institute's choice.
-  if (!getEnv().SELF_SERVE_SIGNUP) return;
-  if (!(await signupIsOpen(tenant.id))) return;
-
   const invitation = await issueInvitation({
     tenantId: tenant.id,
     host: tenant.host,
@@ -164,17 +200,25 @@ async function maybeInvite(
   );
 }
 
-async function signupIsOpen(tenantId: string): Promise<boolean> {
-  const mode = await getTenantDb(tenantId).run(async (scope) => {
+async function readSignupSettings(tenantId: string): Promise<{
+  open: boolean;
+  questions: ReturnType<typeof parseQuestions>;
+}> {
+  return getTenantDb(tenantId).run(async (scope) => {
     const rows = await scope.tx
-      .select({ signupMode: tenantSettings.signupMode })
+      .select({
+        signupMode: tenantSettings.signupMode,
+        questions: tenantSettings.signupQuestionsJson,
+      })
       .from(tenantSettings)
       .where(eq(tenantSettings.tenantId, scope.tenantId))
       .limit(1);
-    return rows[0]?.signupMode ?? 'closed';
-  });
 
-  return mode === 'open';
+    return {
+      open: rows[0]?.signupMode === 'open',
+      questions: parseQuestions(rows[0]?.questions),
+    };
+  });
 }
 
 /**

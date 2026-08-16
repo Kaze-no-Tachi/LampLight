@@ -114,6 +114,28 @@ async function seedTenant(tenant: SeedTenant): Promise<void> {
     supportEmail: `support@${tenant.slug}.test`,
     legalName: tenant.name,
     signupMode: tenant.signupMode,
+    // Only the open institute asks anything, so the fixture covers a form with
+    // questions and a form without, which are different code paths on both the
+    // page and the endpoint.
+    signupQuestionsJson:
+      tenant.signupMode === 'open'
+        ? [
+            {
+              id: 'congregation',
+              label: 'Home congregation',
+              help: 'Where you worship, so we can put you in touch with a local mentor.',
+              type: 'text',
+              required: true,
+            },
+            {
+              id: 'track',
+              label: 'Which track interests you?',
+              type: 'select',
+              required: false,
+              options: ['Pastoral', 'Missions', 'Lay leadership'],
+            },
+          ]
+        : [],
   });
 
   await db.insert(tenantBilling).values({

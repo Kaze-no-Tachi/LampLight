@@ -438,3 +438,114 @@ describe('the retention sweep', () => {
     expect(survived).toHaveLength(1);
   });
 });
+
+describe('institute-specific answers', () => {
+  it('land on the membership, not on the global user', async () => {
+    const email = await freshEmail();
+
+    const issued = await issueInvitation({
+      tenantId: GRACE.id,
+      host: HOST,
+      email,
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      answers: { congregation: 'Grace Chapel', track: 'Pastoral' },
+    });
+    const token = new URL(issued?.url ?? '').searchParams.get('token') ?? '';
+    const invitation = await findPendingInvitation(GRACE.id, token);
+    if (!invitation) throw new Error('expected an invitation');
+
+    const userId = await createAccount(email);
+    await completeActivation({
+      tenantId: GRACE.id,
+      invitationId: invitation.id,
+      userId,
+    });
+
+    const membership = await getTenantDb(GRACE.id).run((scope) =>
+      scope.tx
+        .select({ profile: memberships.profileJson })
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.tenantId, scope.tenantId),
+            eq(memberships.userId, userId),
+          ),
+        ),
+    );
+
+    expect(membership[0]?.profile).toEqual({
+      congregation: 'Grace Chapel',
+      track: 'Pastoral',
+    });
+
+    // The whole reason for the column being here. Storing this globally would
+    // carry Grace's intake answers to Cornerstone the moment the same person
+    // enrolled there, and the isolation suite would never see it, because the
+    // users row is legitimately global.
+    const globalUser = await getAdminDb()
+      .select()
+      .from(users)
+      .where(eq(users.id, userId));
+    expect(JSON.stringify(globalUser[0])).not.toContain('Grace Chapel');
+  });
+
+  it('do not follow the person to another institute', async () => {
+    const email = await freshEmail();
+    const userId = await createAccount(email);
+
+    // Joined at Grace with answers.
+    const atGrace = await issueInvitation({
+      tenantId: GRACE.id,
+      host: HOST,
+      email,
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+      answers: { congregation: 'Grace Chapel' },
+    });
+    const graceToken =
+      new URL(atGrace?.url ?? '').searchParams.get('token') ?? '';
+    const graceInvitation = await findPendingInvitation(GRACE.id, graceToken);
+    if (!graceInvitation) throw new Error('expected an invitation');
+    await completeActivation({
+      tenantId: GRACE.id,
+      invitationId: graceInvitation.id,
+      userId,
+    });
+
+    // Then joined at Cornerstone, which asks nothing.
+    const atCornerstone = await issueInvitation({
+      tenantId: CORNERSTONE.id,
+      host: 'cornerstone.lamplight.school',
+      email,
+      firstName: 'Ada',
+      lastName: 'Lovelace',
+    });
+    const cornerstoneToken =
+      new URL(atCornerstone?.url ?? '').searchParams.get('token') ?? '';
+    const cornerstoneInvitation = await findPendingInvitation(
+      CORNERSTONE.id,
+      cornerstoneToken,
+    );
+    if (!cornerstoneInvitation) throw new Error('expected an invitation');
+    await completeActivation({
+      tenantId: CORNERSTONE.id,
+      invitationId: cornerstoneInvitation.id,
+      userId,
+    });
+
+    const atOther = await getTenantDb(CORNERSTONE.id).run((scope) =>
+      scope.tx
+        .select({ profile: memberships.profileJson })
+        .from(memberships)
+        .where(
+          and(
+            eq(memberships.tenantId, scope.tenantId),
+            eq(memberships.userId, userId),
+          ),
+        ),
+    );
+
+    expect(atOther[0]?.profile).toEqual({});
+  });
+});
