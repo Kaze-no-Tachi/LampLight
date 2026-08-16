@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Mirrors the docker compose topology. The application role is separate from
+  # the migration role and does not hold BYPASSRLS, so the isolation suite is
+  # testing the same two-role setup that runs in production.
+  DATABASE_URL: postgres://lectern_app:lectern_app_password@localhost:5432/lectern
+  DATABASE_ADMIN_URL: postgres://lectern_admin:lectern_admin_password@localhost:5432/lectern
+  LECTERN_APP_PASSWORD: lectern_app_password
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: lectern_admin
+          POSTGRES_PASSWORD: lectern_admin_password
+          POSTGRES_DB: lectern
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lectern_admin -d lectern"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Service containers cannot mount docker-entrypoint-initdb.d, so the same
+      # role bootstrap the compose stack runs at init is applied here by hand.
+      # One source of truth, two ways in.
+      - name: Create the RLS-constrained application role
+        run: psql "$DATABASE_ADMIN_URL" -v ON_ERROR_STOP=1 -f docker/postgres/init/01-roles.sql
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Check for em dashes
+        run: pnpm exec tsx scripts/check-no-em-dash.ts
+
+      - name: Apply migrations
+        run: pnpm db:migrate
+
+      - name: Confirm the application role cannot bypass RLS
+        # A guard on the guard. If this role ever gains BYPASSRLS or superuser,
+        # every isolation assertion below becomes decorative while still
+        # passing, so the suite would go green on a database with no isolation
+        # at all.
+        run: |
+          psql "$DATABASE_URL" -tAc \
+            "select rolsuper or rolbypassrls from pg_roles where rolname = current_user" \
+            | grep -qx f
+
+      - name: Unit and isolation tests
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
