@@ -100,10 +100,18 @@ test.describe('tenant resolution', () => {
   test('resolves each institute and refuses everything else identically', async ({
     request,
   }) => {
-    for (const host of [GRACE, GRACE_CUSTOM, CORNERSTONE]) {
+    for (const host of [GRACE, CORNERSTONE]) {
       const response = await request.get('/', { headers: { host } });
       expect(response.status(), `${host} should resolve`).toBe(200);
     }
+
+    // Resolves, then redirects to the institute's canonical host. A 404 here
+    // would mean it did not resolve at all, which is a different failure.
+    const custom = await request.get('/', {
+      headers: { host: GRACE_CUSTOM },
+      maxRedirects: 0,
+    });
+    expect(custom.status(), `${GRACE_CUSTOM} should redirect`).toBe(307);
 
     // Unverified domain, unknown domain, apex lookalike, and an unclaimed
     // slug must be indistinguishable, or the institute list is enumerable.
@@ -148,10 +156,14 @@ test.describe('a session does not cross institutes', () => {
     });
     expect(grace.status(), 'own institute, platform subdomain').toBe(200);
 
+    // The custom domain is verified but not primary, so it redirects to the
+    // canonical host rather than serving. Following it is the browser's job.
     const graceCustom = await request.get('/account', {
       headers: { host: GRACE_CUSTOM, cookie },
+      maxRedirects: 0,
     });
-    expect(graceCustom.status(), 'own institute, custom domain').toBe(200);
+    expect(graceCustom.status(), 'own institute, custom domain').toBe(307);
+    expect(graceCustom.headers()['location']).toContain(GRACE);
 
     const cornerstone = await request.get('/account', {
       headers: { host: CORNERSTONE, cookie },
@@ -415,5 +427,59 @@ test.describe('password reset', () => {
       });
       expect(response.status(), `${host} should serve the form`).toBe(200);
     }
+  });
+});
+
+test.describe('the canonical domain', () => {
+  test('redirects a verified non-primary domain to the primary one', async ({
+    request,
+  }) => {
+    const response = await request.get('/account', {
+      headers: { host: GRACE_CUSTOM },
+      maxRedirects: 0,
+    });
+
+    const location = response.headers()['location'] ?? '';
+    expect(location).toContain(GRACE);
+    expect(location).toContain('/account');
+  });
+
+  test('keeps the query string, so a mailed token survives', async ({
+    request,
+  }) => {
+    // Activation and reset links are issued on whichever host somebody was
+    // using, and an institute can change its primary the next day. A redirect
+    // that dropped the query would turn every outstanding link into a dead end.
+    const response = await request.get('/activate?token=abc123', {
+      headers: { host: GRACE_CUSTOM },
+      maxRedirects: 0,
+    });
+
+    expect(response.headers()['location']).toContain('token=abc123');
+  });
+
+  test('is not permanent, so changing the primary cannot strand a browser', async ({
+    request,
+  }) => {
+    // A 301 here is cached forever. The first time an institute swaps which
+    // domain is primary, every browser holding the old one is in a redirect
+    // loop that the institute cannot see or clear. See docs/adr/0007.
+    const response = await request.get('/', {
+      headers: { host: GRACE_CUSTOM },
+      maxRedirects: 0,
+    });
+
+    expect([302, 307]).toContain(response.status());
+  });
+
+  test('does not redirect the primary host onto itself', async ({
+    request,
+  }) => {
+    const response = await request.get('/', {
+      headers: { host: GRACE },
+      maxRedirects: 0,
+    });
+
+    expect(response.status()).toBe(200);
   });
 });

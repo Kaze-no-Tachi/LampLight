@@ -405,14 +405,19 @@ export const GRACE = buildTenant(
   0,
   'open',
   [
+    // Primary, so the canonical redirect has a target that resolves in tests
+    // and in development. A real institute usually ends up the other way round,
+    // with its own domain primary, which is what the pair below exercises.
     {
       hostname: 'grace.lamplight.school',
-      isPrimary: false,
+      isPrimary: true,
       verificationStatus: 'active',
     },
+    // Verified but not primary, so it redirects. This is the only fixture that
+    // covers the redirect at all.
     {
       hostname: 'learn.gracebible.test',
-      isPrimary: true,
+      isPrimary: false,
       verificationStatus: 'active',
     },
   ],
