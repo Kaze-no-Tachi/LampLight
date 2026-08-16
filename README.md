@@ -18,10 +18,22 @@ first-class case, not an afterthought.
 
 ## Status
 
-Phase 1 of 9: foundation. The data layer, tenant isolation, the test harness
-that guards it, and the deployment topology. **There is no user-facing
-application yet.** No auth, no routing, no catalog, no payments. See
+Phases 1 and 2 of 9. The data layer and its isolation harness, the deployment
+topology, host-based tenant resolution, authentication with per-tenant
+memberships, and the superadmin console. **There is no catalog and no
+payments yet**, so students cannot buy or play anything. See
 [Roadmap](#roadmap).
+
+Two properties are worth stating up front, because they are what the product
+is for:
+
+- **A session grants nothing at another institute.** Authentication is
+  platform-wide; authorization is a session plus a membership in the tenant
+  resolved from the `Host` header. Signed in at one institute, the same session
+  gets a 404 at another. Covered by `tests/e2e/tenant-isolation.spec.ts`.
+- **Denial never distinguishes.** An unknown host, an unverified domain, a
+  suspended institute, a missing page, and a page you may not see all return
+  the same 404, so the platform's customer list cannot be enumerated.
 
 ## What makes this project unusual
 
@@ -62,7 +74,7 @@ pnpm db:seed
 pnpm test
 ```
 
-That should finish green with 144 tests passing. Then:
+That should finish green with 198 tests passing. Then:
 
 ```bash
 pnpm dev                      # http://localhost:3000
@@ -211,9 +223,8 @@ the runbook, which is a release blocker.
 
 ## Roadmap
 
-Phase 1 is done. The rest, per the PRD:
+Phases 1 and 2 are done. The rest, per the PRD:
 
-2. Tenancy and auth: Host-based resolution, Better Auth, role guards
 3. Custom domains: Cloudflare for SaaS, DNS instructions, verification polling
 4. Content model: programs, courses, modules, lessons, R2 uploads, signed URLs
 5. Entitlements: the access predicate, bulk catalog variant, manual enrollment

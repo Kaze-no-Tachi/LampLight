@@ -7,12 +7,14 @@ Run it with `pnpm test:isolation`, or as part of `pnpm test`.
 
 ## What it is made of
 
-| File                                         | Question it answers                                                            |
-| -------------------------------------------- | ------------------------------------------------------------------------------ |
-| `tests/isolation/read-paths.test.ts`         | Does every repository read path refuse to return another tenant's rows?        |
-| `tests/isolation/rls-enforcement.test.ts`    | With no repository code involved, does Postgres itself refuse?                 |
-| `tests/isolation/rls-coverage.test.ts`       | Does every tenant-owned table actually have RLS enabled, forced, and policied? |
-| `tests/isolation/read-path-coverage.test.ts` | Is every exported repository function registered in the suite?                 |
+| File                                         | Question it answers                                                                                       |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `tests/isolation/read-paths.test.ts`         | Does every repository read path refuse to return another tenant's rows?                                   |
+| `tests/isolation/rls-enforcement.test.ts`    | With no repository code involved, does Postgres itself refuse?                                            |
+| `tests/isolation/rls-coverage.test.ts`       | Does every tenant-owned table actually have RLS enabled, forced, and policied?                            |
+| `tests/isolation/read-path-coverage.test.ts` | Is every exported repository function registered in the suite?                                            |
+| `tests/isolation/tenant-resolution.test.ts`  | Does a Host header resolve to the right institute, and refuse everything else identically?                |
+| `tests/e2e/tenant-isolation.spec.ts`         | Against a real server: does a session grant anything at another institute? Is signup an existence oracle? |
 
 ## The two isolation modes
 
@@ -95,6 +97,21 @@ catch. Delete the tenant scoping from a joined read _entirely_ and it fails.
 Verified across all ten read paths: removing a function's tenant scoping
 completely is caught in every case. Removing one filter from a doubly-scoped
 query is not caught, and should not be, because it is not a leak.
+
+## What the query-level suite cannot see
+
+The suite tests queries. Two classes of cross-tenant leak do not go through a
+query at all, and both have already been caught by hand rather than by it:
+
+**Caching.** A host-dependent route that Next.js prerenders serves one
+institute's HTML to every institute. No query is wrong; the render is simply
+reused. CI guards this by asserting every host-dependent route is marked
+dynamic in the build summary.
+
+**Sessions.** A session is valid platform-wide by design, so no query-level
+assertion shows whether it grants standing at the wrong institute. That is why
+the auth boundary is covered end to end in Playwright, driving a real server
+with real Host headers and real cookies, rather than in this suite.
 
 ## The rule for later phases
 
