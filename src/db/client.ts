@@ -68,6 +68,55 @@ export function getTenantDb(tenantId: string): TenantDb {
   };
 }
 
+export type ResolvedTenant = { id: string; slug: string };
+
+/**
+ * THE BOOTSTRAP READS. There are exactly two, and they live here rather than
+ * in a repository because repositories take a TenantScope, and these are what
+ * produce one.
+ *
+ * Every other read in the codebase runs with app.tenant_id established.
+ * Working out which tenant a request belongs to obviously cannot, so these two
+ * functions are the only queries that run without it. They are kept adjacent
+ * to getTenantDb so the exception is visible next to the rule, and both are
+ * deliberately incapable of returning more than one tenant.
+ *
+ * Neither uses the RLS-bypassing admin client:
+ *
+ *   By host: goes through resolve_tenant_by_host, a SECURITY DEFINER function
+ *   that takes one hostname and answers only about that hostname. Enumerating
+ *   the platform's institutes through it is not possible, because there is no
+ *   query shape that asks for more than one. See drizzle/0002 and ADR 0005.
+ *
+ *   By slug: reads `tenants`, which is a global table with no RLS at all, so
+ *   no exception of any kind is needed.
+ *
+ * Both filter to active tenants, so a suspended institute stops resolving and
+ * its domains start behaving like domains that were never registered.
+ */
+export async function lookupTenantByHost(
+  host: string,
+): Promise<ResolvedTenant | null> {
+  const result = await getDatabase().execute<{
+    tenant_id: string;
+    tenant_slug: string;
+  }>(sql`select tenant_id, tenant_slug from resolve_tenant_by_host(${host})`);
+
+  const row = result.rows[0];
+  return row ? { id: row.tenant_id, slug: row.tenant_slug } : null;
+}
+
+export async function lookupTenantBySlug(
+  slug: string,
+): Promise<ResolvedTenant | null> {
+  const result = await getDatabase().execute<{ id: string; slug: string }>(
+    sql`select id, slug from tenants where slug = ${slug} and status = 'active' limit 1`,
+  );
+
+  const row = result.rows[0];
+  return row ? { id: row.id, slug: row.slug } : null;
+}
+
 /**
  * Health probe for the container HEALTHCHECK and /api/health.
  *

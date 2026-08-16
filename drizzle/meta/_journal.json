@@ -15,6 +15,13 @@
       "when": 1786851655087,
       "tag": "0001_rls_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786877280619,
+      "tag": "0002_host_resolution",
+      "breakpoints": true
     }
   ]
 }
