@@ -44,6 +44,26 @@ const envSchema = z.object({
 
   // Auth (phase 2).
   BETTER_AUTH_SECRET: z.string().min(32).optional(),
+  /**
+   * Self-serve signup. Off by default, and that default is a security
+   * decision rather than caution.
+   *
+   * P0-5 requires that signup never reveal whether an address already holds an
+   * account elsewhere on the platform. The response can be made uniform, and
+   * is, but an attacker can still sign up and then try to sign in with the
+   * password they just chose: success means the address was new. Closing that
+   * requires activating nothing until a link sent to the address is followed,
+   * which requires mail delivery, which the PRD schedules as P1.
+   *
+   * So until mail exists, an open signup form cannot satisfy a P0. With this
+   * off the endpoint accepts the request, changes nothing, and answers exactly
+   * as it does when it is on, so no configuration of this flag is
+   * distinguishable from the outside.
+   */
+  SELF_SERVE_SIGNUP: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   BETTER_AUTH_URL: z.string().url().optional(),
 
   // Custom domains (phase 3).

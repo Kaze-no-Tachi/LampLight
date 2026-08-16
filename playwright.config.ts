@@ -50,6 +50,12 @@ export default defineConfig({
       CLOUDFLARE_API_TOKEN: 'playwright-placeholder',
       CLOUDFLARE_ZONE_ID: 'playwright-placeholder',
       CLOUDFLARE_SAAS_FALLBACK_ORIGIN: 'origin.lamplight.school',
+      // Signup ships disabled, because a signup that works is a signup that
+      // leaks until mail verification exists. The suite turns it on anyway:
+      // disabled is trivially non-leaking and proves nothing, so the enabled
+      // path is the one worth asserting uniform responses against. The default
+      // itself is covered in tests/unit/signup-gate.test.ts.
+      SELF_SERVE_SIGNUP: 'true',
     },
   },
 });
