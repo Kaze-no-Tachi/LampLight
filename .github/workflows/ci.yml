@@ -84,7 +84,28 @@ jobs:
         run: pnpm test
 
       - name: Build
-        run: pnpm build
+        # Deliberately built with no database configuration. A build must never
+        # need runtime secrets, and this caught a real defect: a host-dependent
+        # page was being prerendered, which required DATABASE_URL at build time
+        # and would have served one institute's cached HTML to every institute.
+        # It passed locally only because a .env happened to be present, and
+        # failed in the container where none is.
+        #
+        # The grep is the second half of the same guard. Every route that reads
+        # the Host header must be dynamic, marked ƒ in the build summary, since
+        # a prerendered copy of any of them is a cross-tenant leak.
+        env:
+          DATABASE_URL: ''
+          DATABASE_ADMIN_URL: ''
+        run: |
+          pnpm build 2>&1 | tee /tmp/build.log
+          for route in /superadmin /platform-home; do
+            grep -qE "ƒ ${route}\s" /tmp/build.log \
+              || { echo "FAIL: ${route} is not dynamic, so it can be prerendered"; exit 1; }
+          done
+          grep -qE "ƒ /\s" /tmp/build.log \
+            || { echo "FAIL: the tenant route / is not dynamic"; exit 1; }
+          echo "all host-dependent routes are dynamic"
 
       - name: Validate every compose file
         # The three stacks drift apart easily, and a broken production compose
