@@ -1,6 +1,10 @@
+import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
+import { getViewer } from '@/lib/auth/guards';
 import { primaryRedirectFor } from '@/lib/domains/redirect';
 import { requireTenant } from '@/lib/tenancy/context';
+import { loadBranding } from '@/lib/theme/branding';
+import { SiteFooter, SiteHeader, ThemeStyle } from './chrome';
 
 /**
  * Never prerendered, and this is a correctness requirement rather than a
@@ -12,6 +16,23 @@ import { requireTenant } from '@/lib/tenancy/context';
  * as static. Stating it removes the guesswork.
  */
 export const dynamic = 'force-dynamic';
+
+/**
+ * The tab, which belongs to the institute rather than to the platform.
+ *
+ * Same host-dependence as everything else here, so it cannot be static
+ * metadata on the root layout.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const tenant = await requireTenant();
+  const branding = await loadBranding(tenant);
+
+  return {
+    title: { default: branding.name, template: `%s | ${branding.name}` },
+    description: branding.copy.hero,
+    ...(branding.faviconUrl ? { icons: { icon: branding.faviconUrl } } : {}),
+  };
+}
 
 /**
  * Everything an institute's students and staff see hangs off this layout, and
@@ -34,5 +55,19 @@ export default async function TenantLayout({
   const canonical = await primaryRedirectFor(tenant);
   if (canonical) redirect(canonical);
 
-  return <>{children}</>;
+  // After the redirect check, so a request that is about to be redirected
+  // somewhere else does not pay for a brand nobody will see.
+  const branding = await loadBranding(tenant);
+  const viewer = await getViewer();
+
+  return (
+    <>
+      <ThemeStyle branding={branding} />
+      <div className="flex min-h-screen flex-col">
+        <SiteHeader branding={branding} viewer={viewer} />
+        <div className="flex-1">{children}</div>
+        <SiteFooter branding={branding} />
+      </div>
+    </>
+  );
 }

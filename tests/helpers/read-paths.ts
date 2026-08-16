@@ -10,6 +10,7 @@ import {
   isInstructorOf,
   listEnrollments,
 } from '@/db/repositories/entitlements';
+import { findBranding } from '@/db/repositories/branding';
 import {
   findDomain,
   findPrimaryDomain,
@@ -100,6 +101,16 @@ export const READ_PATHS: ReadPath[] = [
         rows.map((row) => row.id),
         subjectIds,
       );
+    },
+  },
+  {
+    name: 'branding.findBranding',
+    async run(scope, subject) {
+      // Keyed by tenant id, so the row this returns under another institute's
+      // scope is either its own brand (fine) or the subject's (a leak, and a
+      // visible one: it would serve one institute's logo on another's domain).
+      const row = await findBranding(scope);
+      return ownedBySubject(row ? [row.tenantId] : [], new Set([subject.id]));
     },
   },
   {

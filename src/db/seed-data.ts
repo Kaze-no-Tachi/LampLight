@@ -112,6 +112,12 @@ export type SeedTenant = {
    * than being asserted against a single fixture.
    */
   signupMode: 'closed' | 'open';
+  /**
+   * What the institute looks like. The two fixtures deliberately differ in
+   * preset as well as in brand colour, because theming is per tenant and a
+   * fixture where both look the same cannot show that going wrong.
+   */
+  theme: Record<string, string>;
   domains: SeedDomain[];
   users: Record<string, SeedUser>;
   programs: SeedProgram[];
@@ -374,6 +380,7 @@ function buildTenant(
   emailDomain: string,
   applicationFeeBps: number,
   signupMode: 'closed' | 'open',
+  theme: Record<string, string>,
   domains: Omit<SeedDomain, 'id'>[],
 ): SeedTenant {
   return {
@@ -382,6 +389,7 @@ function buildTenant(
     name,
     applicationFeeBps,
     signupMode,
+    theme,
     domains: domains.map((domain) => ({
       ...domain,
       id: seedUuid(`${slug}/domain/${domain.hostname}`),
@@ -407,6 +415,7 @@ export const GRACE = buildTenant(
   // Design partner, so no application fee.
   0,
   'open',
+  { preset: 'classic', brand: '#1f3a5f', radius: '0.5rem' },
   [
     // Primary, so the canonical redirect has a target that resolves in tests
     // and in development. A real institute usually ends up the other way round,
@@ -432,6 +441,9 @@ export const CORNERSTONE = buildTenant(
   'cornerstone.test',
   250,
   'closed',
+  // A different preset and a warmer brand, so the two institutes are told
+  // apart at a glance when both are open in a browser.
+  { preset: 'plain', brand: '#7a2e1e', accent: '#f3e7dd', radius: '0.25rem' },
   [
     {
       hostname: 'cornerstone.lamplight.school',

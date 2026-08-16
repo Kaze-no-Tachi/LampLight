@@ -13,7 +13,9 @@ import {
   type SeedTenant,
   type SeedUser,
 } from './seed-data';
+import { getAuth } from '@/lib/auth';
 import {
+  accounts,
   auditLog,
   courseInstructors,
   courseResources,
@@ -95,9 +97,48 @@ export async function seedDatabase(): Promise<void> {
 
   await db.insert(platformAdmins).values({ userId: PLATFORM_OPERATOR.id });
 
+  await seedCredentials(collectUsers(SEED_TENANTS));
+
   for (const tenant of SEED_TENANTS) {
     await seedTenant(tenant);
   }
+}
+
+/**
+ * The password every fixture account has.
+ *
+ * Well known and printed at the end of a seed run, because it protects nothing:
+ * it exists so that somebody who has just started the stack can sign in as an
+ * admin, an instructor, and a student and see what each of them sees. The seed
+ * refuses to run with NODE_ENV=production, which is what keeps it out of
+ * anywhere it would matter.
+ */
+export const SEED_PASSWORD = 'lamplight-demo-password';
+
+/**
+ * Gives every fixture user a password, through Better Auth's own hasher.
+ *
+ * Hashing here rather than writing a precomputed digest means the fixture
+ * stays correct if the hashing configuration ever changes, and it means these
+ * accounts are indistinguishable from ones created by activation. Before this,
+ * seeded people existed but could not sign in, so clicking around the seeded
+ * site meant first inventing an account that the fixture knew nothing about.
+ */
+async function seedCredentials(people: SeedUser[]): Promise<void> {
+  const db = getAdminDb();
+  const context = await getAuth().$context;
+  const password = await context.password.hash(SEED_PASSWORD);
+
+  await db.insert(accounts).values(
+    people.map((person) => ({
+      userId: person.id,
+      // Better Auth's email/password provider looks itself up under this id,
+      // and stores the user id as the account id.
+      providerId: 'credential',
+      accountId: person.id,
+      password,
+    })),
+  );
 }
 
 async function seedTenant(tenant: SeedTenant): Promise<void> {
@@ -106,11 +147,20 @@ async function seedTenant(tenant: SeedTenant): Promise<void> {
 
   await db.insert(tenantSettings).values({
     tenantId,
-    logoUrl: `https://cdn.lamplight.school/t/${tenantId}/logo.svg`,
-    themeJson: { preset: 'classic', brand: '#1f3a5f', radius: '0.5rem' },
+    // Null rather than a plausible CDN address. There is no uploaded object
+    // behind a fixture, so a URL here renders a broken image on every page of
+    // the seeded site, and the wordmark fallback is the path most institutes
+    // are on before they upload anything anyway.
+    logoUrl: null,
+    themeJson: tenant.theme,
     copyJson: {
-      hero: `Study at ${tenant.name}.`,
-      about: `${tenant.name} trains men and women for faithful ministry.`,
+      tagline: 'Study at your own pace, from anywhere.',
+      hero: `Theological training from ${tenant.name}.`,
+      about:
+        `${tenant.name} trains men and women for faithful ministry. ` +
+        'Courses are audio lectures with written notes, and every course ' +
+        'opens with a lesson you can hear before you enrol.',
+      footer: `${tenant.name}, ${tenant.slug}.lamplight.school`,
     },
     supportEmail: `support@${tenant.slug}.test`,
     legalName: tenant.name,
@@ -394,6 +444,10 @@ async function main(): Promise<void> {
   console.log(`seeded ${SEED_TENANTS.length} tenants\n${tenantSummary}`);
   console.log(
     `  shared identity: ${SHARED_STUDENT.email} is a member of both tenants`,
+  );
+  console.log(
+    `\nsign in as any seeded person with the password ${SEED_PASSWORD}\n` +
+      '  admin@gracebible.test, instructor@gracebible.test, student1@gracebible.test',
   );
 }
 
