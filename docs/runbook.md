@@ -36,6 +36,15 @@ tunnel and the fix is the tunnel, not the firewall.
 
 Verify with `ss -tlnp`. SSH and Docker's internal listeners only.
 
+Those closed ports are load bearing beyond the obvious. Rate limiting on
+sign-in keys on the client address, which the application reads from the
+`CF-Connecting-IP` header, because behind the tunnel every request otherwise
+appears to come from the connector and one bucket would cover the whole
+platform. Cloudflare overwrites that header on the way through, so the value
+can be trusted exactly as long as nothing can reach the application without
+passing Cloudflare. Open 443 to the world and that header becomes attacker
+controlled and rate limiting becomes bypassable by setting it.
+
 ### 1.2 The Dokploy dashboard
 
 Dokploy runs as root with the Docker socket, on a box holding student records
@@ -128,7 +137,11 @@ outage:
 | `{"status":"unhealthy","reason":"database"}`      | Configuration parsed fine and Postgres is genuinely unreachable. Start with `docker compose ps` and the postgres container.                                                                       |
 
 The most common cause of the first one, by some distance, is deploying in
-platform mode with the Cloudflare credentials unset.
+platform mode with the Cloudflare credentials unset. The second most common is
+deploying without `SMTP_HOST` and `MAIL_FROM`. Both are refusals to serve
+rather than warnings, because an instance that cannot deliver mail cannot let
+anybody finish creating an account, and finding that out from a user is worse
+than finding it out from a failed deploy.
 
 ---
 
@@ -205,31 +218,43 @@ docker compose -f docker-compose.prod.yml exec -T postgres \
 From the superadmin console on the platform apex. It creates the tenant, its
 subdomain, and the first admin in one action, and writes an audit_log row.
 
-The console returns a **single-use setup link on the institute's own domain**,
-never a password. Pass it to the new admin however you like. It expires, works
-once, and ends with them choosing a secret you never learn. If the address
-already had an account, no link is issued and their credentials are untouched,
-because provisioning must not be a way to seize an existing identity.
+**A single-use invitation is emailed to the address you name.** The console
+does not show it and cannot retrieve it. The link goes from the mail server to
+their mailbox, it expires in 72 hours, it works once, and it ends with them
+choosing a password you never learn. Provision the same slug again to reissue.
 
-Until mail delivery lands (P1) that hand-off is manual, so send the link over a
-channel you trust and do not paste it anywhere it will persist.
+Nothing exists for that person until they follow it: no account, no password,
+no membership. So an institute you just provisioned has no members until its
+admin clicks through, which is the intended state rather than a failure.
 
-**Self-serve signup ships disabled.** `SELF_SERVE_SIGNUP` defaults to false,
-and turning it on before mail verification exists reopens an account-existence
-oracle. See the addendum in docs/adr/0003.
+If the address already holds an account, nothing about it changes. The link
+asks them to sign in, and signing in is what joins them to the institute.
+Provisioning is not a way to seize an existing identity by naming it.
+
+**If no mail arrives**, check the app log for the message and the SMTP settings
+before reprovisioning. In development with no SMTP configured the whole message
+is written to stderr, link included, which is how the flow is exercised
+locally.
+
+**Self-serve signup is off per institute, not per platform.**
+`tenant_settings.signup_mode` defaults to `closed` and is the gate that
+matters. `SELF_SERVE_SIGNUP` is a kill switch above it: setting it false stops
+every institute at once without touching anybody's settings, and restoring it
+restores each institute's own choice. See docs/adr/0006.
 
 ---
 
 ## 5. Rotate secrets
 
-| Secret                    | How                                                                                                                                                   |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `BETTER_AUTH_SECRET`      | Rotate in Dokploy, redeploy. Invalidates every session, so every user signs in again. Do it deliberately, not on a Friday.                            |
-| `POSTGRES_APP_PASSWORD`   | `ALTER ROLE lamplight_app WITH PASSWORD '...'`, update `DATABASE_URL`, redeploy.                                                                      |
-| `POSTGRES_ADMIN_PASSWORD` | Same for `lamplight_admin` and `DATABASE_ADMIN_URL`.                                                                                                  |
-| `CLOUDFLARE_API_TOKEN`    | Issue a new scoped token, update, redeploy, then revoke the old one in that order.                                                                    |
-| Tunnel credentials        | `cloudflared tunnel create` a replacement, repoint the fallback origin CNAME, delete the old tunnel.                                                  |
-| `STRIPE_*`                | Roll in the Stripe dashboard. Webhook secrets are per endpoint, so update the endpoint and the variable together or payments go silently unprocessed. |
+| Secret                    | How                                                                                                                                                                                       |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BETTER_AUTH_SECRET`      | Rotate in Dokploy, redeploy. Invalidates every session, so every user signs in again. Do it deliberately, not on a Friday.                                                                |
+| `POSTGRES_APP_PASSWORD`   | `ALTER ROLE lamplight_app WITH PASSWORD '...'`, update `DATABASE_URL`, redeploy.                                                                                                          |
+| `POSTGRES_ADMIN_PASSWORD` | Same for `lamplight_admin` and `DATABASE_ADMIN_URL`.                                                                                                                                      |
+| `CLOUDFLARE_API_TOKEN`    | Issue a new scoped token, update, redeploy, then revoke the old one in that order.                                                                                                        |
+| `SMTP_PASSWORD`           | Roll at the mail provider, update, redeploy. Verify by provisioning a throwaway institute and confirming the invitation arrives: a broken mailer is silent until somebody cannot sign up. |
+| Tunnel credentials        | `cloudflared tunnel create` a replacement, repoint the fallback origin CNAME, delete the old tunnel.                                                                                      |
+| `STRIPE_*`                | Roll in the Stripe dashboard. Webhook secrets are per endpoint, so update the endpoint and the variable together or payments go silently unprocessed.                                     |
 
 After rotating either database password, confirm the isolation guarantee is
 still intact:

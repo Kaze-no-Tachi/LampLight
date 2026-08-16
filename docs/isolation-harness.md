@@ -14,6 +14,7 @@ Run it with `pnpm test:isolation`, or as part of `pnpm test`.
 | `tests/isolation/rls-coverage.test.ts`       | Does every tenant-owned table actually have RLS enabled, forced, and policied?                            |
 | `tests/isolation/read-path-coverage.test.ts` | Is every exported repository function registered in the suite?                                            |
 | `tests/isolation/tenant-resolution.test.ts`  | Does a Host header resolve to the right institute, and refuse everything else identically?                |
+| `tests/isolation/invitations.test.ts`        | Do invitations stay inside one institute, spend once, and never demote an existing admin?                 |
 | `tests/e2e/tenant-isolation.spec.ts`         | Against a real server: does a session grant anything at another institute? Is signup an existence oracle? |
 
 ## The two isolation modes
@@ -112,6 +113,16 @@ dynamic in the build summary.
 assertion shows whether it grants standing at the wrong institute. That is why
 the auth boundary is covered end to end in Playwright, driving a real server
 with real Host headers and real cookies, rather than in this suite.
+
+A third class is worth naming because it is not a leak of rows at all:
+
+**Answers that differ.** Signup must not reveal whether an address holds an
+account anywhere on the platform, and every query involved can be perfectly
+scoped while the endpoint still gives the game away through a status code, a
+body, or an account that exists afterwards and can be tested. Playwright covers
+this by comparing responses byte for byte across the cases that must be
+indistinguishable, and by checking that signing up leaves nothing behind to
+sign in with. See docs/adr/0006.
 
 ## The rule for later phases
 

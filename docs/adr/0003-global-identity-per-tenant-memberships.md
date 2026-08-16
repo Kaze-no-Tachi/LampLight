@@ -109,3 +109,42 @@ superadmin provisioning now, and through Stripe checkout in phase 6.
 Enabling it is one environment variable once mail delivery lands, at which
 point `requireEmailVerification` should be turned on in the same change. Doing
 one without the other reopens exactly this hole.
+
+## Addendum, 2026-08-16 (later the same day): resolved by deferring activation
+
+Mail delivery was brought forward rather than waiting for P1, because the
+conflict above only resolves one way and the cost of waiting was shipping a
+feature the PRD asks for in a state where it cannot be turned on.
+
+Signup now creates a `signup_invitations` row and mails a link. It creates no
+user, no credential, and no membership. The account comes into being at
+`/activate`, when somebody follows a link that was only ever sent to that
+address. Both paths through signup do the identical thing and answer with the
+identical bytes, and there is nothing left behind that an attacker can test,
+so the difference is gone rather than concealed.
+
+Three consequences worth recording.
+
+**Activation is email verification, not a step before it.** Following a mailed
+link is precisely the claim verification makes, so activation sets
+`email_verified` and `requireEmailVerification` is now on. Turning that on
+without deferred activation would have locked out every account the old
+provisioning flow created; turning on deferred activation without it would have
+left an unverified account able to sign in, which is the oracle again.
+
+**The account-existence answer still exists, and is confined.** Which of two
+messages goes to the address depends on whether it already holds an account.
+Only whoever opens that mailbox sees which arrived, and they are entitled to
+know their address was used. `findAccountByEmail` carries the rule in its
+docblock: the result may choose words in an email, and may not change anything
+an anonymous caller can observe.
+
+**An existing account cannot be claimed by holding a link.** The activation
+route asks that person to sign in instead. Anything else would trade an
+information leak for account takeover, which is a worse trade in every
+direction.
+
+`SELF_SERVE_SIGNUP` consequently defaults to true, and is now only a platform
+kill switch. The gate that actually keeps strangers out is
+`tenant_settings.signup_mode`, which is per institute and defaults to closed,
+so nothing opens without an institute deciding it should.
