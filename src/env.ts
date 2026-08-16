@@ -108,32 +108,6 @@ function parseEnv(): Env {
     );
   }
 
-  // Platform mode means custom hostnames, which means Cloudflare for SaaS.
-  // Booting without these produces a tenant that can attach a domain and then
-  // watch it sit at "pending" forever with no error anywhere, so it is better
-  // to refuse to start. Single-tenant self-hosters never touch this path.
-  if (value.TENANCY_MODE === 'platform' && value.NODE_ENV === 'production') {
-    const missing = (
-      [
-        'CLOUDFLARE_API_TOKEN',
-        'CLOUDFLARE_ZONE_ID',
-        'CLOUDFLARE_SAAS_FALLBACK_ORIGIN',
-      ] as const
-    ).filter((key) => !value[key]);
-
-    if (missing.length > 0) {
-      throw new Error(
-        'Invalid environment configuration:\n' +
-          missing
-            .map(
-              (key) =>
-                `  ${key}: required when TENANCY_MODE is "platform" in production`,
-            )
-            .join('\n'),
-      );
-    }
-  }
-
   if (value.DATABASE_URL === value.DATABASE_ADMIN_URL) {
     // Same connection string means the application runs as the RLS-bypassing
     // role, which silently removes the database isolation layer.
@@ -152,6 +126,49 @@ let cached: Env | null = null;
 export function getEnv(): Env {
   cached ??= parseEnv();
   return cached;
+}
+
+/**
+ * Asserts the configuration the *application* needs to serve platform traffic.
+ *
+ * This is deliberately not part of parseEnv. Migration tooling, the seed
+ * script, and the superadmin console all share this module, and none of them
+ * touch Cloudflare. Enforcing it during parsing made every one of them refuse
+ * to start in production, which broke the pre-deploy migration step that every
+ * production release runs, for want of credentials it never uses.
+ *
+ * So the requirement lives with the process that actually has it. The app calls
+ * this, tooling does not, and a misconfigured deployment still fails loudly:
+ * the health probe reports `reason: "configuration"` and the container never
+ * goes healthy, so `docker compose up --wait` and Dokploy both refuse the
+ * release rather than serving a broken one.
+ */
+export function assertPlatformConfig(): void {
+  const value = getEnv();
+
+  if (value.TENANCY_MODE !== 'platform' || value.NODE_ENV !== 'production') {
+    return;
+  }
+
+  const missing = (
+    [
+      'CLOUDFLARE_API_TOKEN',
+      'CLOUDFLARE_ZONE_ID',
+      'CLOUDFLARE_SAAS_FALLBACK_ORIGIN',
+    ] as const
+  ).filter((key) => !value[key]);
+
+  if (missing.length > 0) {
+    throw new Error(
+      'Invalid environment configuration:\n' +
+        missing
+          .map(
+            (key) =>
+              `  ${key}: required when TENANCY_MODE is "platform" in production`,
+          )
+          .join('\n'),
+    );
+  }
 }
 
 /**

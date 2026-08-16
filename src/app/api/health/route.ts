@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { checkDatabaseHealth } from '@/db/client';
-import { getEnv } from '@/env';
+import { assertPlatformConfig, getEnv } from '@/env';
 
 /**
  * Liveness and readiness probe, used by the container HEALTHCHECK and by the
@@ -32,6 +32,10 @@ export async function GET(): Promise<NextResponse> {
     // Checked first and separately. If configuration is invalid, every
     // downstream check fails for a reason that has nothing to do with them.
     getEnv();
+    // The platform-only requirements live here rather than in parseEnv, so
+    // that migration tooling sharing this module is not forced to supply
+    // credentials it never uses. See assertPlatformConfig.
+    assertPlatformConfig();
   } catch (error) {
     console.error('[health] invalid configuration:', error);
     return NextResponse.json(
