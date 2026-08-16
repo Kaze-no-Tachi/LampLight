@@ -47,8 +47,8 @@ as the only allowed identity.
 
 ```bash
 cloudflared tunnel login
-cloudflared tunnel create lectern-production      # prints a UUID
-install -m 600 ~/.cloudflared/<UUID>.json /srv/lectern/cloudflared/tunnel.json
+cloudflared tunnel create lamplight-production      # prints a UUID
+install -m 600 ~/.cloudflared/<UUID>.json /srv/lamplight/cloudflared/tunnel.json
 ```
 
 Put the UUID into `docker/cloudflared/config.yml` in place of
@@ -99,7 +99,7 @@ container trying to downgrade a schema another container is still serving.
 Manual path, if Dokploy is unavailable:
 
 ```bash
-cd /srv/lectern
+cd /srv/lamplight
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml --profile tools run --rm migrate
 docker compose -f docker-compose.prod.yml up -d --wait
@@ -119,6 +119,17 @@ docker compose -f docker-compose.prod.yml exec app \
 The probe checks database reachability, not just that the process is alive, so
 a 200 here means the app can actually serve.
 
+A 503 names which system failed, and the distinction saves real time during an
+outage:
+
+| Response                                          | What it means                                                                                                                                                                                     |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{"status":"unhealthy","reason":"configuration"}` | An environment variable is missing or malformed. Nothing is wrong with Postgres. Which variable is in the container log, not in the response, because this endpoint is public through the tunnel. |
+| `{"status":"unhealthy","reason":"database"}`      | Configuration parsed fine and Postgres is genuinely unreachable. Start with `docker compose ps` and the postgres container.                                                                       |
+
+The most common cause of the first one, by some distance, is deploying in
+platform mode with the Cloudflare credentials unset.
+
 ---
 
 ## 3. Roll back
@@ -127,7 +138,7 @@ Images are tagged with the commit SHA, so rolling back is pinning the previous
 one:
 
 ```bash
-LECTERN_IMAGE=ghcr.io/<owner>/lectern:<previous-sha> \
+LAMPLIGHT_IMAGE=ghcr.io/<owner>/lamplight:<previous-sha> \
   docker compose -f docker-compose.prod.yml up -d --wait
 ```
 
@@ -161,7 +172,7 @@ Manual dump:
 
 ```bash
 docker compose -f docker-compose.prod.yml exec -T postgres \
-  pg_dump -U lectern_admin -Fc lectern > lectern-$(date +%F).dump
+  pg_dump -U lamplight_admin -Fc lamplight > lamplight-$(date +%F).dump
 ```
 
 ### The restore drill, which is not optional
@@ -184,7 +195,7 @@ Manual restore:
 
 ```bash
 docker compose -f docker-compose.prod.yml exec -T postgres \
-  pg_restore -U lectern_admin -d lectern --clean --if-exists < lectern-2026-08-16.dump
+  pg_restore -U lamplight_admin -d lamplight --clean --if-exists < lamplight-2026-08-16.dump
 ```
 
 ---
@@ -194,8 +205,8 @@ docker compose -f docker-compose.prod.yml exec -T postgres \
 | Secret                    | How                                                                                                                                                   |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `BETTER_AUTH_SECRET`      | Rotate in Dokploy, redeploy. Invalidates every session, so every user signs in again. Do it deliberately, not on a Friday.                            |
-| `POSTGRES_APP_PASSWORD`   | `ALTER ROLE lectern_app WITH PASSWORD '...'`, update `DATABASE_URL`, redeploy.                                                                        |
-| `POSTGRES_ADMIN_PASSWORD` | Same for `lectern_admin` and `DATABASE_ADMIN_URL`.                                                                                                    |
+| `POSTGRES_APP_PASSWORD`   | `ALTER ROLE lamplight_app WITH PASSWORD '...'`, update `DATABASE_URL`, redeploy.                                                                      |
+| `POSTGRES_ADMIN_PASSWORD` | Same for `lamplight_admin` and `DATABASE_ADMIN_URL`.                                                                                                  |
 | `CLOUDFLARE_API_TOKEN`    | Issue a new scoped token, update, redeploy, then revoke the old one in that order.                                                                    |
 | Tunnel credentials        | `cloudflared tunnel create` a replacement, repoint the fallback origin CNAME, delete the old tunnel.                                                  |
 | `STRIPE_*`                | Roll in the Stripe dashboard. Webhook secrets are per endpoint, so update the endpoint and the variable together or payments go silently unprocessed. |
