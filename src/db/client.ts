@@ -118,6 +118,25 @@ export async function lookupTenantBySlug(
 }
 
 /**
+ * Is this user a platform operator?
+ *
+ * `platform_admins` is global and carries no policy, like `users`, so this
+ * needs no tenant context and no bypass. It is a membership test against one
+ * user id and cannot list the operators.
+ *
+ * Being a platform admin deliberately grants nothing on its own. It gates the
+ * superadmin console, and the console is what uses the RLS-bypassing client.
+ * A platform admin browsing an institute's domain is still just whatever their
+ * membership there says they are, which is usually nothing.
+ */
+export async function isPlatformAdmin(userId: string): Promise<boolean> {
+  const result = await getDatabase().execute<{ exists: boolean }>(
+    sql`select exists(select 1 from platform_admins where user_id = ${userId}) as exists`,
+  );
+  return result.rows[0]?.exists === true;
+}
+
+/**
  * Health probe for the container HEALTHCHECK and /api/health.
  *
  * Reads `tenants`, which is deliberate. A bare `select 1` proves only that a

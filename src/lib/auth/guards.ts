@@ -1,6 +1,6 @@
 import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
-import { getTenantDb } from '@/db/client';
+import { getTenantDb, isPlatformAdmin } from '@/db/client';
 import { findMembership } from '@/db/repositories/entitlements';
 import { requireTenant } from '@/lib/tenancy/context';
 import type { TenantContext } from '@/lib/tenancy/resolve';
@@ -98,4 +98,26 @@ export async function requireRole(minimum: MembershipRole): Promise<Viewer> {
   const viewer = await requireViewer();
   if (RANK[viewer.role] < RANK[minimum]) notFound();
   return viewer;
+}
+
+/**
+ * Requires a platform operator, for the superadmin console.
+ *
+ * This is the one guard that does not involve a tenant, because the console
+ * exists above them all. It is deliberately separate from requireRole: an
+ * institute admin has the highest role inside their own institute and no
+ * standing here whatsoever, and an operator has standing here and none inside
+ * any institute unless they also hold a membership.
+ *
+ * Denial is notFound, matching every other guard, so a tenant admin poking at
+ * the apex cannot tell the console apart from a path that does not exist.
+ */
+export async function requirePlatformAdmin(): Promise<{
+  userId: string;
+  email: string;
+}> {
+  const user = await getSessionUser();
+  if (!user) notFound();
+  if (!(await isPlatformAdmin(user.id))) notFound();
+  return { userId: user.id, email: user.email };
 }

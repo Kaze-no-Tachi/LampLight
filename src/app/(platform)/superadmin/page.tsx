@@ -1,29 +1,61 @@
+import { requirePlatformAdmin } from '@/lib/auth/guards';
 import { requireApex } from '@/lib/tenancy/context';
-
-// Host-dependent, so never prerendered. See the note in (tenant)/layout.tsx.
-export const dynamic = 'force-dynamic';
+import { listTenants } from './actions';
+import { ProvisionForm } from './provision-form';
 
 /**
- * Superadmin console skeleton (PRD milestone 2).
+ * Superadmin console (PRD milestone 2, requirement P0-13).
  *
- * Guarded on the apex only, so an institute's domain asking for /superadmin
- * gets the ordinary 404 and learns nothing about the console existing.
- *
- * The identity check is deliberately still missing: gating on platform_admins
- * needs sessions, which arrive with Better Auth in the next step of this phase.
- * Until then this route shows nothing an operator could act on, and the tenant
- * provisioning action (P0-13) is not wired up.
+ * Two independent gates, and both are necessary. requireApex keeps the console
+ * off institute domains, so a tenant admin cannot even discover it exists.
+ * requirePlatformAdmin keeps it away from everyone who is not an operator,
+ * including institute admins, who hold the highest role inside their own
+ * institute and none at all here.
  */
+export const dynamic = 'force-dynamic';
+
 export default async function SuperadminConsole() {
   await requireApex();
+  const operator = await requirePlatformAdmin();
+  const tenants = await listTenants();
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-4 p-8">
-      <h1 className="text-3xl font-semibold tracking-tight">Superadmin</h1>
-      <p className="text-muted-foreground">
-        Console skeleton. Operator authentication, tenant provisioning, and the
-        domain verification view are not built yet.
-      </p>
+    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 p-8">
+      <header className="flex flex-col gap-1">
+        <h1 className="text-3xl font-semibold tracking-tight">Superadmin</h1>
+        <p className="text-muted-foreground text-sm">
+          Signed in as {operator.email}
+        </p>
+      </header>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-xl font-medium">Institutes</h2>
+        {tenants.length === 0 ? (
+          <p className="text-muted-foreground">None provisioned yet.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {tenants.map((tenant) => (
+              <li
+                key={tenant.id}
+                className="flex flex-col gap-1 rounded-lg border p-3"
+              >
+                <span className="font-medium">{tenant.name}</span>
+                <span className="text-muted-foreground text-sm">
+                  {tenant.primaryHost ?? 'no primary domain'} ({tenant.status})
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-xl font-medium">Provision an institute</h2>
+        <p className="text-muted-foreground text-sm">
+          Creates the tenant, its subdomain, and its first admin in one action.
+        </p>
+        <ProvisionForm />
+      </section>
     </main>
   );
 }
