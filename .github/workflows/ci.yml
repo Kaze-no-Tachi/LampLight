@@ -85,3 +85,84 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Validate every compose file
+        # The three stacks drift apart easily, and a broken production compose
+        # file is normally discovered during a deploy. Parsing them here is
+        # nearly free. Placeholder values stand in for the real secrets, which
+        # live in the Dokploy environment store.
+        env:
+          POSTGRES_ADMIN_PASSWORD: placeholder
+          POSTGRES_APP_PASSWORD: placeholder
+          MINIO_ROOT_PASSWORD: placeholder
+          SELFHOST_DOMAIN: example.test
+          ACME_EMAIL: ci@example.test
+          SINGLE_TENANT_SLUG: example
+        run: |
+          for file in docker-compose.yml docker-compose.prod.yml docker-compose.selfhost.yml; do
+            docker compose -f "$file" config > /dev/null
+            echo "ok $file"
+          done
+
+  publish:
+    # Only after verify is green. An image that failed the isolation suite must
+    # never reach a registry a deploy could pull from.
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lowercase the image name
+        # GHCR rejects uppercase path segments, and this repository owner has
+        # capitals in it.
+        id: image
+        run: echo "repo=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push the application image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runner
+          push: true
+          tags: |
+            ghcr.io/${{ steps.image.outputs.repo }}:latest
+            ghcr.io/${{ steps.image.outputs.repo }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push the migrator image
+        # Shipped separately so the runtime image carries no migration tooling
+        # and no source. Migrations are run as a deliberate step against a
+        # single instance, never from the application entrypoint.
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: migrator
+          push: true
+          tags: |
+            ghcr.io/${{ steps.image.outputs.repo }}:latest-migrator
+            ghcr.io/${{ steps.image.outputs.repo }}:${{ github.sha }}-migrator
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy
+        # Dokploy pulls and restarts. The webhook runs the migrator first as a
+        # pre-deploy command, so a release that needs a schema change never
+        # starts serving against the old schema. See docs/runbook.md.
+        if: vars.DOKPLOY_DEPLOY_WEBHOOK != ''
+        run: curl -fsS -X POST "${{ vars.DOKPLOY_DEPLOY_WEBHOOK }}"
