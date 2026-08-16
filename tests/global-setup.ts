@@ -1,13 +1,6 @@
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { config as loadEnv } from 'dotenv';
-
-for (const file of ['.env.test', '.env']) {
-  const path = resolve(process.cwd(), file);
-  if (existsSync(path)) {
-    loadEnv({ path, override: false });
-  }
-}
+// Loads .env and the test fallbacks. A static import, so it has run before
+// the dynamic imports below reach any module that validates the environment.
+import './env';
 
 /**
  * Reseeds before the suite runs, so the isolation tests assert against known
