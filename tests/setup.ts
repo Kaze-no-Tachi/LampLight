@@ -24,5 +24,30 @@ for (const file of ['.env.test', '.env']) {
  * has configured one, and it never reaches an environment that matters: the
  * only sessions it can sign are ones minted against a test database.
  */
-process.env.BETTER_AUTH_SECRET ??=
-  'vitest_development_secret_at_least_32_chars';
+/**
+ * Assigns only when a variable is absent or blank.
+ *
+ * `??=` is not enough: .env.example ships later-phase variables as `FOO=`, so
+ * a copied .env leaves them as empty strings rather than undefined, and an
+ * empty string is not nullish. That silently defeated these defaults once
+ * already.
+ */
+function fallback(key: string, value: string): void {
+  if (!process.env[key]) process.env[key] = value;
+}
+
+fallback('BETTER_AUTH_SECRET', 'vitest_development_secret_at_least_32_chars');
+
+/**
+ * Placeholder Cloudflare configuration, for the same reason.
+ *
+ * The custom domain code refuses to do anything when the platform is not
+ * configured for custom hostnames, which is correct behaviour and is covered
+ * separately in tests/unit/cloudflare.test.ts. Every test that exercises the
+ * domain lifecycle injects a stub client, so nothing here dials out, and a
+ * path that did reach the real API would fail loudly on a fake token rather
+ * than quietly pass.
+ */
+fallback('CLOUDFLARE_ZONE_ID', 'vitest-zone');
+fallback('CLOUDFLARE_API_TOKEN', 'vitest-token');
+fallback('CLOUDFLARE_SAAS_FALLBACK_ORIGIN', 'origin.lamplight.school');

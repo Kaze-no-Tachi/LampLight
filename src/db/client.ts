@@ -182,6 +182,25 @@ export async function findAccountByEmail(
 }
 
 /**
+ * Every active institute's id, for work that has to visit all of them.
+ *
+ * `tenants` is global and carries no policy, so this needs no bypass and is
+ * not an exception to anything. It returns ids and nothing else, so a caller
+ * still has to establish a tenant scope before it can read a single row that
+ * belongs to any of them.
+ *
+ * That is the point: the domain sweep runs across the whole platform, and
+ * doing it this way keeps it inside the isolation model rather than reaching
+ * for the RLS-bypassing client because the work happens to be cross-tenant.
+ */
+export async function listActiveTenantIds(): Promise<string[]> {
+  const result = await getDatabase().execute<{ id: string }>(
+    sql`select id from tenants where status = 'active' order by created_at`,
+  );
+  return result.rows.map((row) => row.id);
+}
+
+/**
  * Health probe for the container HEALTHCHECK and /api/health.
  *
  * Reads `tenants`, which is deliberate. A bare `select 1` proves only that a

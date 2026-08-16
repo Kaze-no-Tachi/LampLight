@@ -51,7 +51,16 @@ describe('environment validation', () => {
   });
 
   it('still refuses to serve platform traffic without them', async () => {
-    stub({ ...PLATFORM_PRODUCTION });
+    // Blanked explicitly rather than merely left out. tests/setup.ts supplies
+    // placeholder Cloudflare values so the domain suite can run, and an empty
+    // string reads as absent, so this asserts against a genuinely unset
+    // configuration rather than against whatever the setup file happened to do.
+    stub({
+      ...PLATFORM_PRODUCTION,
+      CLOUDFLARE_API_TOKEN: '',
+      CLOUDFLARE_ZONE_ID: '',
+      CLOUDFLARE_SAAS_FALLBACK_ORIGIN: '',
+    });
     const { assertPlatformConfig } = await import('@/env');
 
     expect(() => assertPlatformConfig()).toThrow(/CLOUDFLARE_API_TOKEN/);

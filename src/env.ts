@@ -91,6 +91,14 @@ const envSchema = z.object({
   CLOUDFLARE_API_TOKEN: z.string().min(1).optional(),
   CLOUDFLARE_ZONE_ID: z.string().min(1).optional(),
   CLOUDFLARE_SAAS_FALLBACK_ORIGIN: z.string().min(1).optional(),
+  /**
+   * Shared secret for the domain verification sweep endpoint.
+   *
+   * Unset means the endpoint 404s, which is also what a wrong secret gets, so
+   * whether a deployment runs the sweep is not discoverable from outside.
+   * Generate with `openssl rand -base64 32`.
+   */
+  DOMAIN_SWEEP_SECRET: z.string().min(16).optional(),
 
   // Object storage (phase 4). R2 in production, Minio locally.
   S3_ENDPOINT: z.string().url().optional(),

@@ -10,6 +10,11 @@ import {
   listEnrollments,
 } from '@/db/repositories/entitlements';
 import {
+  findDomain,
+  findPrimaryDomain,
+  listDomains,
+} from '@/db/repositories/domains';
+import {
   findLessonWithCourse,
   listLessonResources,
   listLessonsForCourse,
@@ -61,6 +66,10 @@ function ownedBySubject(ids: string[], subjectIds: Set<string>): string[] {
   return ids.filter((id) => subjectIds.has(id));
 }
 
+function domainIds(tenant: SeedTenant): Set<string> {
+  return new Set(tenant.domains.map((domain) => domain.id));
+}
+
 function courseIds(tenant: SeedTenant): Set<string> {
   return new Set(tenant.courses.map((course) => course.id));
 }
@@ -76,6 +85,34 @@ function lessonIds(tenant: SeedTenant): Set<string> {
 }
 
 export const READ_PATHS: ReadPath[] = [
+  {
+    name: 'domains.listDomains',
+    async run(scope, subject) {
+      const rows = await listDomains(scope);
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        domainIds(subject),
+      );
+    },
+  },
+  {
+    name: 'domains.findDomain',
+    async run(scope, subject) {
+      // Named by id, which is the case a missing tenant filter would leak: an
+      // institute asking about a domain row that is not its own.
+      const target = subject.domains[0];
+      if (!target) return [];
+      const row = await findDomain(scope, target.id);
+      return ownedBySubject(row ? [row.id] : [], domainIds(subject));
+    },
+  },
+  {
+    name: 'domains.findPrimaryDomain',
+    async run(scope, subject) {
+      const row = await findPrimaryDomain(scope);
+      return ownedBySubject(row ? [row.id] : [], domainIds(subject));
+    },
+  },
   {
     name: 'catalog.listPublishedCourses',
     async run(scope, subject) {

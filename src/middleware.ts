@@ -21,6 +21,16 @@ import { classifyHost, normalizeHost } from '@/lib/tenancy/host';
 
 const TENANT_HOST_HEADER = 'x-lamplight-host';
 const TENANT_SLUG_HINT_HEADER = 'x-lamplight-slug-hint';
+/**
+ * The path and query as the visitor asked for it.
+ *
+ * A server component cannot see the request URL, only headers, and the
+ * canonical-domain redirect has to preserve the whole path including a query
+ * string, because activation and password reset links carry their token there.
+ * Dropping it would turn every outstanding link into a dead end the first time
+ * an institute changed its primary domain.
+ */
+const TENANT_PATH_HEADER = 'x-lamplight-path';
 
 export const config = {
   // Static assets and image optimisation never need tenant context, and
@@ -41,6 +51,12 @@ export function middleware(request: NextRequest): NextResponse {
   if (host) headers.set(TENANT_HOST_HEADER, host);
   else headers.delete(TENANT_HOST_HEADER);
   headers.delete(TENANT_SLUG_HINT_HEADER);
+  // Set from the parsed URL rather than forwarded from the client, so a
+  // caller cannot choose where a redirect sends the next visitor.
+  headers.set(
+    TENANT_PATH_HEADER,
+    `${request.nextUrl.pathname}${request.nextUrl.search}`,
+  );
 
   const forward = () => NextResponse.next({ request: { headers } });
 

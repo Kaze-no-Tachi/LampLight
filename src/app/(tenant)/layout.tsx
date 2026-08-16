@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation';
+import { primaryRedirectFor } from '@/lib/domains/redirect';
 import { requireTenant } from '@/lib/tenancy/context';
 
 /**
@@ -24,7 +26,13 @@ export default async function TenantLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   // Throws to the generic 404 when the host belongs to no active tenant.
-  await requireTenant();
+  const tenant = await requireTenant();
+
+  // Canonical domain (PRD section 5.3). Here rather than in middleware for the
+  // same reason as the 404 above: knowing which of an institute's domains is
+  // primary is a database question, and middleware cannot ask one.
+  const canonical = await primaryRedirectFor(tenant);
+  if (canonical) redirect(canonical);
 
   return <>{children}</>;
 }

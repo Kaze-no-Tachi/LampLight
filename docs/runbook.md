@@ -250,6 +250,41 @@ restores each institute's own choice. See docs/adr/0006.
 
 ---
 
+## 4b. Custom domains
+
+An institute attaches its own domain itself, from Domains in its settings. The
+operator is not in the loop and does not need to be: the institute adds the
+hostname, creates the two DNS records shown, and the domain goes live once
+Cloudflare confirms them.
+
+What the operator owns is the sweep. Cron POSTs to the sweep endpoint, which
+polls Cloudflare for every unverified domain and releases claims that lapsed:
+
+```bash
+# Every ten minutes, on the VPS.
+*/10 * * * * curl -fsS -X POST \
+  -H "x-lamplight-sweep-secret: $DOMAIN_SWEEP_SECRET" \
+  https://<apex>/api/platform/domain-sweep >/dev/null
+```
+
+Without it, a domain that verifies overnight goes live when an admin next opens
+the settings page rather than in the morning. That is a delay, not an outage,
+so a failed sweep is not a page-in-the-night event.
+
+The endpoint 404s when `DOMAIN_SWEEP_SECRET` is unset, and 404s on a wrong
+secret too, so a 404 here means one of the two and the logs say which.
+
+**When an institute says their domain is not working:**
+
+| Symptom                                     | Where to look                                                                                                                                                                      |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Stuck on "Checking DNS"                     | Their records are not published yet, or not exactly as shown. The settings page prints Cloudflare's own reason under the domain.                                                   |
+| "Already managed elsewhere"                 | Another Cloudflare account holds that custom hostname. If it is theirs, they remove it there first. If it is an abandoned claim of ours, the sweep clears it within fourteen days. |
+| Live but visitors get a certificate warning | The hostname went active before the certificate did. This should be impossible (both are required), so check the sweep is running and the domain's status in the database.         |
+| Redirect loop between two of their domains  | Should not happen: the canonical redirect is 302 precisely so it is never cached. If it does, look for a proxy or CDN in front of us caching it anyway.                            |
+
+---
+
 ## 5. Rotate secrets
 
 | Secret                    | How                                                                                                                                                                                       |
@@ -258,6 +293,7 @@ restores each institute's own choice. See docs/adr/0006.
 | `POSTGRES_APP_PASSWORD`   | `ALTER ROLE lamplight_app WITH PASSWORD '...'`, update `DATABASE_URL`, redeploy.                                                                                                          |
 | `POSTGRES_ADMIN_PASSWORD` | Same for `lamplight_admin` and `DATABASE_ADMIN_URL`.                                                                                                                                      |
 | `CLOUDFLARE_API_TOKEN`    | Issue a new scoped token, update, redeploy, then revoke the old one in that order.                                                                                                        |
+| `DOMAIN_SWEEP_SECRET`     | Update in Dokploy and in the cron line together. A mismatch is silent: the sweep just 404s and domains stop being polled, which looks like Cloudflare being slow.                         |
 | `SMTP_PASSWORD`           | Roll at the mail provider, update, redeploy. Verify by provisioning a throwaway institute and confirming the invitation arrives: a broken mailer is silent until somebody cannot sign up. |
 | Tunnel credentials        | `cloudflared tunnel create` a replacement, repoint the fallback origin CNAME, delete the old tunnel.                                                                                      |
 | `STRIPE_*`                | Roll in the Stripe dashboard. Webhook secrets are per endpoint, so update the endpoint and the variable together or payments go silently unprocessed.                                     |
