@@ -15,6 +15,7 @@ Run it with `pnpm test:isolation`, or as part of `pnpm test`.
 | `tests/isolation/read-path-coverage.test.ts` | Is every exported repository function registered in the suite?                                            |
 | `tests/isolation/tenant-resolution.test.ts`  | Does a Host header resolve to the right institute, and refuse everything else identically?                |
 | `tests/isolation/invitations.test.ts`        | Do invitations stay inside one institute, spend once, and never demote an existing admin?                 |
+| `tests/isolation/password-reset.test.ts`     | Does a reset link arrive on the institute that was asked, even under concurrent requests?                 |
 | `tests/e2e/tenant-isolation.spec.ts`         | Against a real server: does a session grant anything at another institute? Is signup an existence oracle? |
 
 ## The two isolation modes

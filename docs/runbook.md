@@ -236,6 +236,12 @@ before reprovisioning. In development with no SMTP configured the whole message
 is written to stderr, link included, which is how the flow is exercised
 locally.
 
+**Forgotten passwords are self-serve on every institute**, at
+`/reset-password` on the institute's own hostname, and need no operator. The
+link expires in an hour and is good once. It does not confirm an address, so
+somebody who never activated their account cannot use it to get in; if their
+invitation has also expired, an institute admin has to invite them again.
+
 **Self-serve signup is off per institute, not per platform.**
 `tenant_settings.signup_mode` defaults to `closed` and is the gate that
 matters. `SELF_SERVE_SIGNUP` is a kill switch above it: setting it false stops

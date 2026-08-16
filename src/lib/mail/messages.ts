@@ -81,6 +81,35 @@ export function existingAccountEmail(params: {
 }
 
 /**
+ * Sent when somebody asks to reset a password and the address has an account.
+ *
+ * Nothing is sent when it does not, which is the one asymmetry in this file and
+ * the reason the request endpoint answers identically either way: the response
+ * has to carry no information, and an unsent message carries none to anybody
+ * except the person who was not expecting one.
+ */
+export function passwordResetEmail(params: {
+  to: string;
+  institute: string;
+  url: string;
+  expiresAt: Date;
+}): MailMessage {
+  return {
+    to: params.to,
+    subject: `Reset your ${params.institute} password`,
+    text:
+      'Hello,\n\n' +
+      `Somebody asked to reset the password for this address at ${params.institute}. ` +
+      'Open the link below to choose a new one.\n\n' +
+      `${params.url}\n\n` +
+      `The link works once and stops working on ${formatExpiry(params.expiresAt)}.\n\n` +
+      'If this was not you, your password has not changed and you can ignore ' +
+      'this message.' +
+      SIGNATURE(params.institute),
+  };
+}
+
+/**
  * Sent to the first administrator when an operator provisions an institute.
  *
  * Same mechanism as a student invitation, different role and different words.

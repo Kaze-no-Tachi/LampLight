@@ -5,6 +5,17 @@ import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { getEnv, requireEnv } from '@/env';
 import * as schema from '@/db/schema';
+import { sendMail } from '@/lib/mail';
+import { passwordResetEmail } from '@/lib/mail/messages';
+import { absoluteUrl } from '@/lib/tenancy/host';
+import { getSendingInstitute } from './sending-institute';
+
+/**
+ * One hour. A reset link is a way into an existing account, so it is shorter
+ * lived than an invitation, which is a way into an account that does not exist
+ * yet and whose recipient may be waiting on somebody else to act.
+ */
+const RESET_TOKEN_TTL_SECONDS = 60 * 60;
 
 /**
  * Better Auth, wired to the global identity tables (PRD section 5.4).
@@ -72,6 +83,38 @@ function createAuth() {
        */
       requireEmailVerification: true,
       minPasswordLength: 12,
+      resetPasswordTokenExpiresIn: RESET_TOKEN_TTL_SECONDS,
+
+      /**
+       * Mails the reset link, built on the institute's own hostname.
+       *
+       * The `url` argument is deliberately unused. Better Auth builds it
+       * against one configured base URL, which cannot be right for a platform
+       * of many hostnames, and a reset link on the wrong institute's domain is
+       * a phishing lesson rather than a bug. The raw token is what matters, so
+       * the link is assembled here against the host the request arrived on.
+       *
+       * The library passes no request to this callback, so the institute comes
+       * from the async context the route established. Without one there is
+       * nowhere to send anybody, and sending nothing is correct: the endpoint
+       * answers identically whether a message went out or not.
+       */
+      sendResetPassword: async ({ user, token }) => {
+        const institute = getSendingInstitute();
+        if (!institute) return;
+
+        await sendMail(
+          passwordResetEmail({
+            to: user.email,
+            institute: institute.name,
+            url: absoluteUrl(
+              institute.host,
+              `/reset-password?token=${encodeURIComponent(token)}`,
+            ),
+            expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_SECONDS * 1000),
+          }),
+        );
+      },
     },
 
     advanced: {

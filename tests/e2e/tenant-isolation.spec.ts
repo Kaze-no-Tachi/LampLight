@@ -373,3 +373,47 @@ test.describe('the signup form', () => {
     expect(closed.status(), 'Cornerstone is seeded closed').toBe(404);
   });
 });
+
+test.describe('password reset', () => {
+  test('answers identically for a real address and an unknown one', async ({
+    request,
+  }) => {
+    // Same rule as signup. A helpful "no account with that address" would tell
+    // anybody who asks whether a given person studies on this platform.
+    const real = testEmail('reset');
+    await activate(request, GRACE, GRACE_SEED.id, real);
+
+    const known = await request.post('/api/tenant/reset-request', {
+      headers: { host: GRACE, 'content-type': 'application/json' },
+      data: { email: real },
+    });
+    const unknown = await request.post('/api/tenant/reset-request', {
+      headers: { host: GRACE, 'content-type': 'application/json' },
+      data: { email: testEmail('nobody') },
+    });
+
+    expect(known.status()).toBe(unknown.status());
+    expect(await known.text()).toBe(await unknown.text());
+  });
+
+  test('will not reset anything on a host that serves no institute', async ({
+    request,
+  }) => {
+    const response = await request.post('/api/tenant/reset-request', {
+      headers: { host: APEX, 'content-type': 'application/json' },
+      data: { email: testEmail('apexreset') },
+    });
+    expect(response.status()).toBe(404);
+  });
+
+  test('offers the form on every institute', async ({ request }) => {
+    // Unlike signup, this is not something an institute opts into. Anyone with
+    // an account needs a way back into it.
+    for (const host of [GRACE, CORNERSTONE]) {
+      const response = await request.get('/reset-password', {
+        headers: { host },
+      });
+      expect(response.status(), `${host} should serve the form`).toBe(200);
+    }
+  });
+});

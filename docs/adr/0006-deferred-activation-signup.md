@@ -106,3 +106,37 @@ does not exist.
 worse on effort for the person, who has to leave the page, copy a code, and
 come back. The link carries the tenant host, which the code would have to
 resolve some other way.
+
+## Addendum: password reset, and where links come from
+
+Reset has the same shape as everything else here and one extra problem.
+
+The shape: the request endpoint answers identically whether the address holds an
+account, a pending request suppresses another for five minutes so the form
+cannot be used to mail somebody repeatedly, and the completion page reports one
+failure message for a token that was never valid, has been used, or has
+expired.
+
+The extra problem is the link. Better Auth builds reset URLs against a single
+configured base URL, which cannot be right for a platform where every institute
+has its own hostname, and a reset link on the wrong institute's domain invites
+somebody to type their password somewhere they have no relationship with. The
+library hands the raw token to the callback, so the link can be built
+correctly, but it passes no request, so the callback has no host.
+
+Resolved with `AsyncLocalStorage` (`src/lib/auth/sending-institute.ts`). The
+route establishes the institute, the callback reads it back, and links are
+built on the host the request actually arrived on. A module-level variable
+would have been simpler and would race the moment two institutes request a
+reset at the same second, sending one institute's user to the other's domain.
+That case is asserted directly in `tests/isolation/password-reset.test.ts`
+rather than reasoned about.
+
+Reset does not verify an address. Following the link proves control of the
+mailbox, so it could, but treating it as verification would let a reset stand
+in for activation and quietly become a second way into the platform. The one
+state this leaves unrecoverable by the person themselves is an account that was
+created but never activated whose invitation has also expired, which needs an
+institute admin to invite them again. That is a support action rather than a
+lockout, and the resume branch on activation already handles the common form of
+it.

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
@@ -74,6 +75,13 @@ export function SignInForm({ next }: { next: string }) {
           confirm your account from the link you were emailed.
         </p>
       )}
+
+      <Link
+        href="/reset-password"
+        className="text-muted-foreground text-sm underline"
+      >
+        Forgotten your password?
+      </Link>
     </form>
   );
 }
