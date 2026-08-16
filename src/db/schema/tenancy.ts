@@ -8,7 +8,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import { domainVerificationStatus, tenantStatus } from './enums';
+import { domainVerificationStatus, signupMode, tenantStatus } from './enums';
 
 /**
  * The tenant root. This is the only table that is not itself tenant-scoped,
@@ -73,6 +73,28 @@ export const tenantSettings = pgTable('tenant_settings', {
   supportEmail: text('support_email'),
   timezone: text('timezone').notNull().default('America/Indiana/Indianapolis'),
   legalName: text('legal_name'),
+  /**
+   * Whether this institute takes self-serve signups. Closed unless the
+   * institute turns it on, because an institute that has not thought about
+   * who may enrol should not be accepting strangers by default.
+   *
+   * This is the second of two gates. SELF_SERVE_SIGNUP is the platform kill
+   * switch and this is the per-institute choice, and signup happens only when
+   * both agree. An operator can therefore stop every institute at once without
+   * editing any institute's settings, and restoring the switch restores each
+   * institute's own decision rather than a blanket one.
+   */
+  signupMode: signupMode('signup_mode').notNull().default('closed'),
+  /**
+   * Extra questions asked at signup, beyond name and email.
+   *
+   * Answers are institute-specific and land on the membership, never on the
+   * global users row. Grace asking for a home congregation must not follow the
+   * person to Cornerstone. The definitions live here so each institute owns
+   * its own intake form; rendering them is later-phase work, and until then
+   * this stays an empty array and the form asks for a name.
+   */
+  signupQuestionsJson: jsonb('signup_questions_json').notNull().default([]),
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()
     .defaultNow(),

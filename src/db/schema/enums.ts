@@ -23,6 +23,17 @@ export const membershipRole = pgEnum('membership_role', [
   'admin',
 ]);
 
+/**
+ * Whether an institute accepts self-serve signups (PRD section 5.2 leaves this
+ * open; the decision is recorded in ADR 0006).
+ *
+ * 'closed' is the default and means the signup endpoint changes nothing, which
+ * is the same observable behaviour as an institute that does not exist. An
+ * institute that has not opted in is therefore not distinguishable from one
+ * that has never been asked.
+ */
+export const signupMode = pgEnum('signup_mode', ['closed', 'open']);
+
 export const productKind = pgEnum('product_kind', ['program', 'course']);
 
 export const lessonResourceKind = pgEnum('lesson_resource_kind', [

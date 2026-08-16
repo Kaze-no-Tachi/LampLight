@@ -1,6 +1,7 @@
 import {
   boolean,
   index,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -26,6 +27,17 @@ export const users = pgTable('users', {
   // Better Auth treats name as required, so it is not null with an empty
   // default rather than nullable. Signup always supplies one.
   name: text('name').notNull().default(''),
+  /**
+   * Given and family name, kept apart from the display `name` Better Auth
+   * owns, because a form that asks for two fields and stores one cannot
+   * address someone correctly later without guessing where the split was.
+   *
+   * These are global, unlike everything else collected at signup. A person's
+   * own name is theirs across institutes; the institute-specific answers go on
+   * the membership below.
+   */
+  firstName: text('first_name').notNull().default(''),
+  lastName: text('last_name').notNull().default(''),
   emailVerified: boolean('email_verified').notNull().default(false),
   image: text('image'),
   createdAt: timestamp('created_at', { withTimezone: true })
@@ -55,6 +67,19 @@ export const memberships = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     role: membershipRole('role').notNull().default('student'),
+    /**
+     * Answers to whatever this institute asks at signup, keyed by question id
+     * from tenant_settings.signup_questions_json.
+     *
+     * On the membership rather than on `users` on purpose, and this is the
+     * whole reason the column is here rather than there. The answers belong to
+     * a relationship with one institute: a home congregation, an ordination
+     * year, a reference. Storing them globally would carry one institute's
+     * intake answers to every other institute the person later joins, which is
+     * a cross-tenant disclosure the isolation model would not even see,
+     * because the row is legitimately global.
+     */
+    profileJson: jsonb('profile_json').notNull().default({}),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -64,6 +89,76 @@ export const memberships = pgTable(
     unique('memberships_tenant_id_user_id_key').on(
       table.tenantId,
       table.userId,
+    ),
+  ],
+);
+
+/**
+ * A pending invitation: someone asked to join this institute, or an operator
+ * asked on their behalf, and nothing has happened yet.
+ *
+ * WHY THIS TABLE EXISTS AT ALL
+ *
+ * Signup creates no account. It creates one of these and sends a link to the
+ * address. Until that link is followed there is no user, no credential, and no
+ * membership, so an attacker who submits a stranger's address has produced
+ * nothing they can test and learned nothing about whether that address already
+ * held an account. That is what makes P0-5 hold rather than merely appearing
+ * to (ADR 0003 and its addendum).
+ *
+ * Tenant owned, so an invitation to Grace is invisible from Cornerstone even
+ * through a query that forgot to filter. The token is stored hashed: this
+ * table sits inside the isolation boundary, but a row that leaks by any other
+ * route (a backup, a support export, a stray log of a query result) must not
+ * hand over a working credential.
+ *
+ * Two accepted consequences of scoping it, both deliberate:
+ *
+ *   1. The same address can hold pending invitations at several institutes,
+ *      and neither institute can see the other's. That is correct, and it is
+ *      the case that makes a platform-wide unique constraint wrong here.
+ *   2. Token lookup is tenant scoped, so uniqueness is too. The link is always
+ *      followed on the institute's own hostname, which resolves the tenant
+ *      before the token is read, so there is no ambiguity to resolve.
+ */
+export const signupInvitations = pgTable(
+  'signup_invitations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    /** Always stored lowercased, because it is compared against users.email. */
+    email: text('email').notNull(),
+    firstName: text('first_name').notNull().default(''),
+    lastName: text('last_name').notNull().default(''),
+    /** Answers to this institute's own questions, copied to the membership. */
+    answersJson: jsonb('answers_json').notNull().default({}),
+    /**
+     * What the invitation grants on activation. 'student' for self-serve,
+     * 'admin' for the first account an operator provisions, which is why
+     * provisioning and signup share one activation path rather than each
+     * inventing a token scheme.
+     */
+    role: membershipRole('role').notNull().default('student'),
+    /** SHA-256 of the token. The token itself is only ever in the email. */
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    /** Set when the link is followed. Single use is enforced on this column. */
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique('signup_invitations_tenant_id_id_key').on(table.tenantId, table.id),
+    unique('signup_invitations_tenant_id_token_hash_key').on(
+      table.tenantId,
+      table.tokenHash,
+    ),
+    index('signup_invitations_tenant_id_email_idx').on(
+      table.tenantId,
+      table.email,
     ),
   ],
 );

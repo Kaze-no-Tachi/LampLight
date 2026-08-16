@@ -75,11 +75,21 @@ export async function seedDatabase(): Promise<void> {
   );
 
   await db.insert(users).values(
-    collectUsers(SEED_TENANTS).map((user) => ({
-      id: user.id,
-      email: user.email,
-      name: user.name,
-    })),
+    collectUsers(SEED_TENANTS).map((user) => {
+      const [firstName = '', ...rest] = user.name.split(' ');
+      return {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        firstName,
+        lastName: rest.join(' '),
+        // Seeded people stand in for accounts that were activated the normal
+        // way, which means their address was proven. Leaving this false would
+        // lock every fixture account out of sign-in for a reason that has
+        // nothing to do with what any test is checking.
+        emailVerified: true,
+      };
+    }),
   );
 
   await db.insert(platformAdmins).values({ userId: PLATFORM_OPERATOR.id });
@@ -103,6 +113,7 @@ async function seedTenant(tenant: SeedTenant): Promise<void> {
     },
     supportEmail: `support@${tenant.slug}.test`,
     legalName: tenant.name,
+    signupMode: tenant.signupMode,
   });
 
   await db.insert(tenantBilling).values({

@@ -29,6 +29,13 @@
       "when": 1786878544490,
       "tag": "0003_auth_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786881542277,
+      "tag": "0004_signup_invitations",
+      "breakpoints": true
     }
   ]
 }

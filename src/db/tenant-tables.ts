@@ -31,6 +31,7 @@ export const TENANT_OWNED_TABLES = [
   'program_courses',
   'programs',
   'progress',
+  'signup_invitations',
   'tenant_billing',
   'tenant_domains',
   'tenant_settings',

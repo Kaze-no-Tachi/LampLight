@@ -104,6 +104,12 @@ export type SeedTenant = {
   slug: string;
   name: string;
   applicationFeeBps: number;
+  /**
+   * One seeded institute takes self-serve signups and one does not, so that
+   * "closed answers exactly as open does" has both sides to compare rather
+   * than being asserted against a single fixture.
+   */
+  signupMode: 'closed' | 'open';
   domains: SeedDomain[];
   users: Record<string, SeedUser>;
   programs: SeedProgram[];
@@ -364,6 +370,7 @@ function buildTenant(
   name: string,
   emailDomain: string,
   applicationFeeBps: number,
+  signupMode: 'closed' | 'open',
   domains: Omit<SeedDomain, 'id'>[],
 ): SeedTenant {
   return {
@@ -371,6 +378,7 @@ function buildTenant(
     slug,
     name,
     applicationFeeBps,
+    signupMode,
     domains: domains.map((domain) => ({
       ...domain,
       id: seedUuid(`${slug}/domain/${domain.hostname}`),
@@ -395,6 +403,7 @@ export const GRACE = buildTenant(
   'gracebible.test',
   // Design partner, so no application fee.
   0,
+  'open',
   [
     {
       hostname: 'grace.lamplight.school',
@@ -414,6 +423,7 @@ export const CORNERSTONE = buildTenant(
   'Cornerstone Baptist Institute',
   'cornerstone.test',
   250,
+  'closed',
   [
     {
       hostname: 'cornerstone.lamplight.school',
