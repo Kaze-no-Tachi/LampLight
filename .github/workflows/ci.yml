@@ -107,6 +107,15 @@ jobs:
             || { echo "FAIL: the tenant route / is not dynamic"; exit 1; }
           echo "all host-dependent routes are dynamic"
 
+      - name: End to end tests
+        # The auth boundary lives here rather than in the unit suite, because
+        # "a session grants nothing at another institute" is only meaningful
+        # against a real server handling real Host headers and real cookies.
+        # These are the product's central security claims, so they gate merges.
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm test:e2e
+
       - name: Validate every compose file
         # The three stacks drift apart easily, and a broken production compose
         # file is normally discovered during a deploy. Parsing them here is
