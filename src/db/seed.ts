@@ -220,6 +220,17 @@ async function seedTenant(tenant: SeedTenant): Promise<void> {
       tenantId,
       userId: user.id,
       role: user.role,
+      // Answers to whatever this institute asked, on the membership rather
+      // than on the user. The shared student answers both institutes and the
+      // two answers differ, which is the fixture that shows the column is
+      // doing its job: one person, two institutes, two separate records.
+      profileJson:
+        tenant.signupMode === 'open' && user.role === 'student'
+          ? {
+              congregation: `${tenant.name} Chapel`,
+              track: key === 'shared' ? 'Missions' : 'Pastoral',
+            }
+          : {},
     })),
   );
 

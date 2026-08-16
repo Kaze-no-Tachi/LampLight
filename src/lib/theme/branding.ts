@@ -1,5 +1,5 @@
 import { getTenantDb } from '@/db/client';
-import { findBranding } from '@/db/repositories/branding';
+import { findBranding } from '@/db/repositories/settings';
 import type { TenantContext } from '@/lib/tenancy/resolve';
 import { safeAssetUrl } from './assets';
 import {

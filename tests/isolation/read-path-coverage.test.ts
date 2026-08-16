@@ -1,11 +1,11 @@
 import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import * as branding from '@/db/repositories/branding';
 import * as catalog from '@/db/repositories/catalog';
 import * as domains from '@/db/repositories/domains';
 import * as entitlements from '@/db/repositories/entitlements';
 import * as lessons from '@/db/repositories/lessons';
+import * as settings from '@/db/repositories/settings';
 import { READ_PATHS } from '../helpers/read-paths';
 
 /**
@@ -26,11 +26,11 @@ import { READ_PATHS } from '../helpers/read-paths';
  */
 
 const REPOSITORY_MODULES: Record<string, Record<string, unknown>> = {
-  branding,
   catalog,
   domains,
   entitlements,
   lessons,
+  settings,
 };
 
 const REPOSITORY_DIR = resolve(

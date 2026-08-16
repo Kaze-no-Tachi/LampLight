@@ -6,11 +6,13 @@ import {
 } from '@/db/repositories/catalog';
 import {
   findMembership,
+  findMembershipDetail,
   hasActiveEntitlement,
   isInstructorOf,
+  listEnrolledCourses,
   listEnrollments,
 } from '@/db/repositories/entitlements';
-import { findBranding } from '@/db/repositories/branding';
+import { findBranding, findSignupQuestions } from '@/db/repositories/settings';
 import {
   findDomain,
   findPrimaryDomain,
@@ -104,7 +106,7 @@ export const READ_PATHS: ReadPath[] = [
     },
   },
   {
-    name: 'branding.findBranding',
+    name: 'settings.findBranding',
     async run(scope, subject) {
       // Keyed by tenant id, so the row this returns under another institute's
       // scope is either its own brand (fine) or the subject's (a leak, and a
@@ -256,6 +258,42 @@ export const READ_PATHS: ReadPath[] = [
         rows.map((row) => row.id),
         subjectEnrollmentIds,
       );
+    },
+  },
+  {
+    name: 'entitlements.listEnrolledCourses',
+    async run(scope, subject) {
+      // The shared student is a member of both institutes with enrollments in
+      // each, which is the case that matters: a missing tenant filter here
+      // shows somebody the other institute's courses on their profile page,
+      // and it would look plausible because both fixtures share every slug.
+      const shared = userByKey(subject, 'shared');
+      const rows = await listEnrolledCourses(scope, shared.id);
+      return ownedBySubject(
+        rows.map((row) => row.courseId),
+        courseIds(subject),
+      );
+    },
+  },
+  {
+    name: 'entitlements.findMembershipDetail',
+    async run(scope, subject) {
+      const admin = userByKey(subject, 'admin');
+      const row = await findMembershipDetail(scope, admin.id);
+      return row ? [admin.id] : [];
+    },
+  },
+  {
+    name: 'settings.findSignupQuestions',
+    async run(scope, subject) {
+      // Not identified by a row id, so the leak signal is the content: Grace
+      // asks questions and Cornerstone asks none, and reading the wrong
+      // institute's list is how one institute's intake form ends up on
+      // another institute's signup page.
+      const questions = await findSignupQuestions(scope);
+      const asked = Array.isArray(questions) && questions.length > 0;
+      const subjectAsks = subject.signupMode === 'open';
+      return asked === subjectAsks ? [subject.id] : [];
     },
   },
 ];
