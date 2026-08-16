@@ -1,10 +1,14 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTenantDb } from '@/db/client';
-import { findCourseBySlug } from '@/db/repositories/catalog';
+import {
+  findCourseBySlug,
+  listCourseResources,
+} from '@/db/repositories/catalog';
 import { listLessonsForCourse } from '@/db/repositories/lessons';
 import { decideLessonAccess } from '@/lib/access/predicate';
 import { getSessionUser } from '@/lib/auth/guards';
+import { Markdown } from '@/lib/markdown/render';
 import { requireTenant } from '@/lib/tenancy/context';
 
 /**
@@ -38,6 +42,7 @@ export default async function CoursePage({
     if (!course) return null;
 
     const lessons = await listLessonsForCourse(scope, course.id);
+    const resources = await listCourseResources(scope, course.id);
     const ctx = { tenantId: tenant.id, userId: user?.id ?? null };
 
     const rows = [];
@@ -52,7 +57,7 @@ export default async function CoursePage({
       });
     }
 
-    return { course, lessons: rows };
+    return { course, lessons: rows, resources };
   });
 
   // A course that is not published, or belongs to another institute, is not
@@ -60,6 +65,17 @@ export default async function CoursePage({
   if (!view) notFound();
 
   const openCount = view.lessons.filter((lesson) => lesson.open).length;
+
+  // A document is shown when it is public, or when this viewer has been let
+  // into at least one gated lesson, which is the cheapest honest proxy for
+  // "is enrolled" without asking the predicate a second question it was not
+  // designed to answer. A syllabus is public; a handout usually is not.
+  const enrolled = view.lessons.some(
+    (lesson) => lesson.open && !lesson.isFreePreview,
+  );
+  const documents = view.resources.filter(
+    (resource) => resource.isPublic || enrolled,
+  );
 
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 p-8">
@@ -77,6 +93,41 @@ export default async function CoursePage({
           {view.lessons.length} lessons, {openCount} open to you
         </p>
       </header>
+
+      {view.course.descriptionMd && (
+        <section className="text-muted-foreground flex flex-col gap-3">
+          <Markdown source={view.course.descriptionMd} />
+        </section>
+      )}
+
+      {documents.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="text-sm font-medium">Course documents</h2>
+          <ul className="flex flex-col gap-1 text-sm">
+            {documents.map((doc) => (
+              <li key={doc.id}>
+                {doc.url ? (
+                  <a
+                    href={doc.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-4"
+                  >
+                    {doc.title || doc.filename || 'Document'}
+                  </a>
+                ) : (
+                  <span>{doc.title || doc.filename || 'Document'}</span>
+                )}
+                {!doc.isPublic && (
+                  <span className="text-muted-foreground ml-2 text-xs">
+                    enrolled students only
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <ol className="flex flex-col gap-2">
         {view.lessons.map((lesson, index) => (

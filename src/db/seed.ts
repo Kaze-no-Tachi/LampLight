@@ -16,6 +16,7 @@ import {
 import {
   auditLog,
   courseInstructors,
+  courseResources,
   courses,
   enrollments,
   lessonResources,
@@ -214,6 +215,21 @@ async function seedTenant(tenant: SeedTenant): Promise<void> {
       slug: course.slug,
       descriptionMd: `## ${course.title}\n\nAudio lectures with notes.`,
       isStandalonePurchasable: course.isStandalonePurchasable,
+    })),
+  );
+
+  // A syllabus per course, marked public, since it is what somebody reads
+  // while deciding whether to enrol.
+  await db.insert(courseResources).values(
+    tenant.courses.map((course) => ({
+      id: course.syllabusId,
+      tenantId,
+      courseId: course.id,
+      kind: 'link' as const,
+      title: `${course.title} syllabus`,
+      url: `https://${tenant.slug}.test/syllabus/${course.slug}.pdf`,
+      isPublic: true,
+      sortOrder: 0,
     })),
   );
 

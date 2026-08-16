@@ -1,5 +1,6 @@
 import {
   findCourseBySlug,
+  listCourseResources,
   listPublishedCourses,
   listPublishedPrograms,
 } from '@/db/repositories/catalog';
@@ -85,6 +86,22 @@ function lessonIds(tenant: SeedTenant): Set<string> {
 }
 
 export const READ_PATHS: ReadPath[] = [
+  {
+    name: 'catalog.listCourseResources',
+    async run(scope, subject) {
+      // Named by course id, which is the shape a missing tenant filter leaks:
+      // an institute asking about another's course and getting its syllabus.
+      const course = courseBySlug(subject, 'old-testament-survey');
+      const rows = await listCourseResources(scope, course.id);
+      const subjectIds = new Set(
+        subject.courses.map((item) => item.syllabusId),
+      );
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        subjectIds,
+      );
+    },
+  },
   {
     name: 'domains.listDomains',
     async run(scope, subject) {

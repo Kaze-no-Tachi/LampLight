@@ -61,6 +61,8 @@ export type SeedModule = {
 export type SeedCourse = {
   id: string;
   productId: string;
+  /** The syllabus attached to the course, for the course-resources read path. */
+  syllabusId: string;
   slug: string;
   title: string;
   isStandalonePurchasable: boolean;
@@ -229,6 +231,7 @@ function buildCourses(tenantSlug: string): SeedCourse[] {
     return {
       id: seedUuid(key),
       productId: seedUuid(`${key}/product`),
+      syllabusId: seedUuid(`${key}/syllabus`),
       slug: course.slug,
       title: course.title,
       isStandalonePurchasable: course.isStandalonePurchasable,

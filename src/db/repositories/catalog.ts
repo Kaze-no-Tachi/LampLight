@@ -1,5 +1,5 @@
 import { and, asc, eq } from 'drizzle-orm';
-import { courses, products, programs } from '@/db/schema';
+import { courseResources, courses, products, programs } from '@/db/schema';
 import type { TenantScope } from '@/db/scope';
 
 /**
@@ -115,4 +115,45 @@ export async function listPublishedPrograms(
       ),
     )
     .orderBy(asc(programs.title));
+}
+
+export type CourseResource = {
+  id: string;
+  kind: 'audio' | 'video' | 'pdf' | 'link';
+  title: string;
+  storageKey: string | null;
+  url: string | null;
+  filename: string | null;
+  isPublic: boolean;
+};
+
+/**
+ * Documents attached to a course: the syllabus, a reading list, a handout.
+ *
+ * Returns every resource regardless of `is_public`, because the caller knows
+ * whether the viewer is enrolled and this repository does not. Deciding that
+ * here would put a second authority next to the access predicate.
+ */
+export async function listCourseResources(
+  scope: TenantScope,
+  courseId: string,
+): Promise<CourseResource[]> {
+  return scope.tx
+    .select({
+      id: courseResources.id,
+      kind: courseResources.kind,
+      title: courseResources.title,
+      storageKey: courseResources.storageKey,
+      url: courseResources.url,
+      filename: courseResources.filename,
+      isPublic: courseResources.isPublic,
+    })
+    .from(courseResources)
+    .where(
+      and(
+        eq(courseResources.tenantId, scope.tenantId),
+        eq(courseResources.courseId, courseId),
+      ),
+    )
+    .orderBy(asc(courseResources.sortOrder));
 }

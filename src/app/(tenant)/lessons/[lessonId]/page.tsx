@@ -5,6 +5,7 @@ import { findLessonWithCourse } from '@/db/repositories/lessons';
 import { issueLessonMedia } from '@/lib/access/media';
 import { decideLessonAccess } from '@/lib/access/predicate';
 import { getSessionUser } from '@/lib/auth/guards';
+import { Markdown } from '@/lib/markdown/render';
 import { requireTenant } from '@/lib/tenancy/context';
 import { LessonPlayer } from './lesson-player';
 
@@ -43,6 +44,10 @@ export default async function LessonPage({
 
   const media = await issueLessonMedia(ctx, lessonId);
   const audio = (media ?? []).filter((item) => item.kind === 'audio');
+  // Everything that is not audio is something to open rather than play. The
+  // URLs are signed and short lived exactly as the audio ones are: a lesson
+  // handout is as much a thing somebody paid for as the recording is.
+  const documents = (media ?? []).filter((item) => item.kind !== 'audio');
 
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 p-8">
@@ -62,6 +67,32 @@ export default async function LessonPage({
           </p>
         )}
       </header>
+
+      {lesson.contentMd && (
+        <section className="text-muted-foreground flex flex-col gap-3">
+          <Markdown source={lesson.contentMd} />
+        </section>
+      )}
+
+      {documents.length > 0 && (
+        <section className="flex flex-col gap-2">
+          <h2 className="text-sm font-medium">Materials</h2>
+          <ul className="flex flex-col gap-1 text-sm">
+            {documents.map((item) => (
+              <li key={item.resourceId}>
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-4"
+                >
+                  {item.filename ?? 'Document'}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {audio.length === 0 ? (
         <p className="text-muted-foreground">

@@ -15,6 +15,8 @@ export type LessonWithCourse = {
   id: string;
   title: string;
   slug: string;
+  /** The instructor's notes for this lesson, markdown. */
+  contentMd: string | null;
   isFreePreview: boolean;
   durationSeconds: number | null;
   moduleId: string;
@@ -30,6 +32,7 @@ export async function findLessonWithCourse(
       id: lessons.id,
       title: lessons.title,
       slug: lessons.slug,
+      contentMd: lessons.contentMd,
       isFreePreview: lessons.isFreePreview,
       durationSeconds: lessons.durationSeconds,
       moduleId: lessons.moduleId,
@@ -65,6 +68,7 @@ export async function listLessonsForCourse(
       id: lessons.id,
       title: lessons.title,
       slug: lessons.slug,
+      contentMd: lessons.contentMd,
       isFreePreview: lessons.isFreePreview,
       durationSeconds: lessons.durationSeconds,
       moduleId: lessons.moduleId,

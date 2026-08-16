@@ -50,6 +50,13 @@
       "when": 1786885123262,
       "tag": "0006_claimable_domains",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786922260216,
+      "tag": "0007_course_resources",
+      "breakpoints": true
     }
   ]
 }
