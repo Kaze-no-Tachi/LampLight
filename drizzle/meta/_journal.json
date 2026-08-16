@@ -43,6 +43,13 @@
       "when": 1786881774883,
       "tag": "0005_tenant_name_in_resolution",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786885123262,
+      "tag": "0006_claimable_domains",
+      "breakpoints": true
     }
   ]
 }

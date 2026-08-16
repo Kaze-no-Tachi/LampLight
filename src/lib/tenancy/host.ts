@@ -97,6 +97,67 @@ export function isValidSlug(slug: string): boolean {
   return /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(slug);
 }
 
+export type HostnameClaim =
+  | { ok: true; hostname: string }
+  | { ok: false; reason: 'malformed' | 'platform' };
+
+/**
+ * Whether an institute may claim a hostname as its own (PRD section 5.3).
+ *
+ * THE ONE THAT MATTERS IS THE PLATFORM CHECK.
+ *
+ * Resolution tries verified custom domains first and falls through to parsing a
+ * subdomain of the platform apex. An institute allowed to claim
+ * `other.lamplight.school` would therefore win that name outright, because a
+ * verified row beats slug parsing, and would be serving its own site at another
+ * institute's address. Claiming the bare apex would take the marketing site and
+ * the superadmin console with it.
+ *
+ * So nothing at or under the platform apex is ever claimable. Institutes get
+ * their subdomain from their slug, which only provisioning can set. This is
+ * enforced here, in one pure function, rather than in the form that happens to
+ * be the way in today.
+ *
+ * Everything else is shape checking. Whether the institute actually owns
+ * `institute.edu` is not something this can know and not something it tries to
+ * guess: that is what the DNS ownership record proves, and until Cloudflare
+ * confirms it the domain does not resolve.
+ */
+export function claimableHostname(
+  candidate: string,
+  apexDomain: string,
+): HostnameClaim {
+  // Checked before normalizing, because normalizeHost strips a port. Silently
+  // turning `institute.edu:8443` into a claim on `institute.edu` would hand
+  // somebody exclusive rights to a name they did not quite type, and a port
+  // means nothing here anyway: Cloudflare for SaaS serves 443 and only 443.
+  if (candidate.includes(':')) return { ok: false, reason: 'malformed' };
+
+  const hostname = normalizeHost(candidate);
+  if (!hostname) return { ok: false, reason: 'malformed' };
+
+  // Must be a dotted name of ordinary DNS labels. Rules out bare labels,
+  // addresses, wildcards, and anything with a path or scheme smuggled in.
+  const labels = hostname.split('.');
+  if (labels.length < 2 || hostname.length > 253) {
+    return { ok: false, reason: 'malformed' };
+  }
+  if (!labels.every((label) => isValidSlug(label))) {
+    return { ok: false, reason: 'malformed' };
+  }
+  // A final label of digits only means somebody typed an IP address.
+  if (/^\d+$/.test(labels[labels.length - 1] ?? '')) {
+    return { ok: false, reason: 'malformed' };
+  }
+
+  const apex = apexDomain.trim().toLowerCase();
+  if (hostname === apex || hostname.endsWith(`.${apex}`)) {
+    return { ok: false, reason: 'platform' };
+  }
+
+  return { ok: true, hostname };
+}
+
 /**
  * Builds an absolute URL on a given host.
  *

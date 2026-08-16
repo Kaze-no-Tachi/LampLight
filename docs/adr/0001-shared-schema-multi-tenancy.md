@@ -63,6 +63,24 @@ per-tenant constraint would let two institutes both claim `institute.edu` and
 leave Host-header resolution ambiguous. The constraint is deliberately global
 and the code comment on the table says why.
 
+**Narrowed in migration 0006, when custom domains were actually built.** The
+global unique was right about what it was protecting and wrong about when it
+applied. It made a _claim_ exclusive from the moment somebody typed it, so any
+institute could enter a competitor's domain and permanently block them from
+ever attaching it, owning nothing and proving nothing, and the platform had no
+way to tell a squatter from a slow DNS change.
+
+It is now a partial unique index over rows whose `verification_status` is
+`'active'`. Several institutes may hold a pending claim on one name; the one
+that proves ownership through DNS gets it, and after that nobody else can.
+That is exactly the property resolution needs and no more. A per-tenant unique
+on `(tenant_id, hostname)` remains, so one institute still cannot claim the
+same name twice.
+
+Note that exclusivity has not disappeared, it has moved: Cloudflare's custom
+hostname record genuinely is one per name, so a pending claim still occupies
+something. That is what `claim_expires_at` is for.
+
 ## Alternatives considered
 
 **Database per tenant** was rejected on migration and pooling cost. Hundreds of
