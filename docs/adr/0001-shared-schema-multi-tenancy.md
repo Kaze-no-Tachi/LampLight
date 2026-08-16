@@ -6,7 +6,7 @@
 
 ## Context
 
-Lectern hosts many independent bible institutes on one deployment. Each holds
+Lamplight hosts many independent bible institutes on one deployment. Each holds
 student PII and payment records for a separate legal entity. There are three
 usual ways to keep them apart:
 

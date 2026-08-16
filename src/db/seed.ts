@@ -95,7 +95,7 @@ async function seedTenant(tenant: SeedTenant): Promise<void> {
 
   await db.insert(tenantSettings).values({
     tenantId,
-    logoUrl: `https://cdn.lectern.app/t/${tenantId}/logo.svg`,
+    logoUrl: `https://cdn.lamplight.school/t/${tenantId}/logo.svg`,
     themeJson: { preset: 'classic', brand: '#1f3a5f', radius: '0.5rem' },
     copyJson: {
       hero: `Study at ${tenant.name}.`,

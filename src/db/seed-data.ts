@@ -18,7 +18,7 @@ import { createHash } from 'node:crypto';
 
 /** UUID v5 style derivation. Stable across runs and machines. */
 export function seedUuid(name: string): string {
-  const digest = createHash('sha1').update(`lectern.seed:${name}`).digest();
+  const digest = createHash('sha1').update(`lamplight.seed:${name}`).digest();
   const bytes = Buffer.from(digest.subarray(0, 16));
   bytes.writeUInt8((bytes.readUInt8(6) & 0x0f) | 0x50, 6);
   bytes.writeUInt8((bytes.readUInt8(8) & 0x3f) | 0x80, 8);
@@ -397,7 +397,7 @@ export const GRACE = buildTenant(
   0,
   [
     {
-      hostname: 'grace.lectern.app',
+      hostname: 'grace.lamplight.school',
       isPrimary: false,
       verificationStatus: 'active',
     },
@@ -416,7 +416,7 @@ export const CORNERSTONE = buildTenant(
   250,
   [
     {
-      hostname: 'cornerstone.lectern.app',
+      hostname: 'cornerstone.lamplight.school',
       isPrimary: true,
       verificationStatus: 'active',
     },

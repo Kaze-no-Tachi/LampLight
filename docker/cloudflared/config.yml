@@ -26,9 +26,9 @@
 # SETUP, ONCE PER ENVIRONMENT
 #
 #   cloudflared tunnel login
-#   cloudflared tunnel create lectern-production
+#   cloudflared tunnel create lamplight-production
 #     -> writes <TUNNEL-UUID>.json
-#   install it at /srv/lectern/cloudflared/tunnel.json, chmod 600
+#   install it at /srv/lamplight/cloudflared/tunnel.json, chmod 600
 #   replace the tunnel id below with the UUID
 #
 # Then point Cloudflare for SaaS at it:

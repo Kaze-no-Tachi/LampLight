@@ -17,11 +17,11 @@
 # support for build, depends_on conditions, and profiles, all three of which
 # this file relies on.
 
-name: lectern
+name: lamplight
 
 services:
   app:
-    image: ${LECTERN_IMAGE:-ghcr.io/kaze-no-tachi/lectern:latest}
+    image: ${LAMPLIGHT_IMAGE:-ghcr.io/kaze-no-tachi/lamplight:latest}
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -73,7 +73,7 @@ services:
   # The profile keeps `up` from starting it, which matters because two
   # instances racing the migration table is how a schema gets corrupted.
   migrate:
-    image: ${LECTERN_MIGRATOR_IMAGE:-ghcr.io/kaze-no-tachi/lectern:latest-migrator}
+    image: ${LAMPLIGHT_MIGRATOR_IMAGE:-ghcr.io/kaze-no-tachi/lamplight:latest-migrator}
     profiles: ['tools']
     restart: 'no'
     environment:
@@ -88,10 +88,10 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-lectern_admin}
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-lamplight_admin}
       POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-lectern}
-      LECTERN_APP_PASSWORD: ${POSTGRES_APP_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-lamplight}
+      LAMPLIGHT_APP_PASSWORD: ${POSTGRES_APP_PASSWORD}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       # Same role bootstrap the development stack and CI use. The application
@@ -102,7 +102,7 @@ services:
       test:
         [
           'CMD-SHELL',
-          'pg_isready -U ${POSTGRES_ADMIN_USER:-lectern_admin} -d ${POSTGRES_DB:-lectern}',
+          'pg_isready -U ${POSTGRES_ADMIN_USER:-lamplight_admin} -d ${POSTGRES_DB:-lamplight}',
         ]
       interval: 10s
       timeout: 5s
@@ -115,8 +115,8 @@ services:
     volumes:
       - ./docker/cloudflared/config.yml:/etc/cloudflared/config.yml:ro
       # The tunnel credentials JSON produced by `cloudflared tunnel create`.
-      # Lives on the VPS at /srv/lectern/cloudflared, mode 600, never in git.
-      - ${CLOUDFLARED_CREDENTIALS_DIR:-/srv/lectern/cloudflared}:/etc/cloudflared/creds:ro
+      # Lives on the VPS at /srv/lamplight/cloudflared, mode 600, never in git.
+      - ${CLOUDFLARED_CREDENTIALS_DIR:-/srv/lamplight/cloudflared}:/etc/cloudflared/creds:ro
     depends_on:
       app:
         condition: service_healthy

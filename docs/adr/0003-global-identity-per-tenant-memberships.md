@@ -29,7 +29,7 @@ row. An institute cannot enroll another institute's student, and the database
 rejects the attempt rather than trusting the code not to make it.
 
 Global identity does not mean shared sessions. Cookies are domain-scoped, so a
-login at `learn.gracebible.test` has no bearing on `cornerstone.lectern.app`.
+login at `learn.gracebible.test` has no bearing on `cornerstone.lamplight.school`.
 Signing in twice is the intended behaviour, not a gap.
 
 ## Consequences

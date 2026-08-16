@@ -20,7 +20,7 @@ async function main(): Promise<void> {
   // regardless of how the database was provisioned, which matters for
   // self-hosters who did not use the compose file.
   const appRole = new URL(
-    process.env.DATABASE_URL ?? 'postgres://lectern_app@localhost/lectern',
+    process.env.DATABASE_URL ?? 'postgres://lamplight_app@localhost/lamplight',
   ).username;
 
   if (appRole) {

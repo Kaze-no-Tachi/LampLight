@@ -1,4 +1,4 @@
-name: lectern
+name: lamplight
 
 services:
   postgres:
@@ -7,17 +7,17 @@ services:
     environment:
       # The compose superuser is the migration and superadmin role. The
       # RLS-constrained application role is created by the init script.
-      POSTGRES_USER: lectern_admin
-      POSTGRES_PASSWORD: lectern_admin_password
-      POSTGRES_DB: lectern
-      LECTERN_APP_PASSWORD: lectern_app_password
+      POSTGRES_USER: lamplight_admin
+      POSTGRES_PASSWORD: lamplight_admin_password
+      POSTGRES_DB: lamplight
+      LAMPLIGHT_APP_PASSWORD: lamplight_app_password
     ports:
       - '5432:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U lectern_admin -d lectern']
+      test: ['CMD-SHELL', 'pg_isready -U lamplight_admin -d lamplight']
       interval: 3s
       timeout: 5s
       retries: 20
@@ -27,8 +27,8 @@ services:
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: lectern_minio
-      MINIO_ROOT_PASSWORD: lectern_minio_password
+      MINIO_ROOT_USER: lamplight_minio
+      MINIO_ROOT_PASSWORD: lamplight_minio_password
     ports:
       - '9000:9000'
       - '9001:9001'
@@ -48,9 +48,9 @@ services:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 lectern_minio lectern_minio_password &&
-      mc mb --ignore-existing local/lectern-media &&
-      echo 'bucket lectern-media ready'
+      mc alias set local http://minio:9000 lamplight_minio lamplight_minio_password &&
+      mc mb --ignore-existing local/lamplight-media &&
+      echo 'bucket lamplight-media ready'
       "
 
 volumes:

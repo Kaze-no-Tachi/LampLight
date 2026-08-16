@@ -1,4 +1,4 @@
-# Lectern
+# Lamplight
 
 Open source, multi-tenant learning platform for bible institutes.
 
@@ -8,7 +8,7 @@ atomic unit and bolt bundles on awkwardly, which leaves institutes granting
 access by hand, tracking entitlements in spreadsheets, or paying per-seat
 pricing that does not fit a student who buys a four-year program once.
 
-Lectern treats the entitlement as the thing that matters. Buy a program and you
+Lamplight treats the entitlement as the thing that matters. Buy a program and you
 get every course inside it. Buy one course and you get exactly that. Every
 institute runs on its own domain, with its own branding, collecting its own
 money through its own Stripe account.
@@ -25,7 +25,7 @@ application yet.** No auth, no routing, no catalog, no payments. See
 
 ## What makes this project unusual
 
-Lectern holds student PII and payment records for independent legal entities in
+Lamplight holds student PII and payment records for independent legal entities in
 one shared database. Cross-tenant data leakage is the failure mode that would
 end the product, so isolation is enforced at two layers that fail independently:
 
@@ -62,7 +62,7 @@ pnpm db:seed
 pnpm test
 ```
 
-That should finish green with 142 tests passing. Then:
+That should finish green with 144 tests passing. Then:
 
 ```bash
 pnpm dev                      # http://localhost:3000
@@ -70,17 +70,17 @@ pnpm dev                      # http://localhost:3000
 
 ### What compose gives you
 
-| Service             | Where                                          | Credentials                                |
-| ------------------- | ---------------------------------------------- | ------------------------------------------ |
-| Postgres 16         | `localhost:5432`, database `lectern`           | see `.env.example`                         |
-| Minio (R2 stand-in) | API `localhost:9000`, console `localhost:9001` | `lectern_minio` / `lectern_minio_password` |
+| Service             | Where                                          | Credentials                                    |
+| ------------------- | ---------------------------------------------- | ---------------------------------------------- |
+| Postgres 16         | `localhost:5432`, database `lamplight`         | see `.env.example`                             |
+| Minio (R2 stand-in) | API `localhost:9000`, console `localhost:9001` | `lamplight_minio` / `lamplight_minio_password` |
 
 Postgres starts with **two roles**, and the split is load-bearing rather than
 tidiness:
 
-- `lectern_app` is what the application connects as. It is not a superuser and
+- `lamplight_app` is what the application connects as. It is not a superuser and
   does not hold `BYPASSRLS`, so row-level security genuinely constrains it.
-- `lectern_admin` owns the schema, runs migrations, and backs the superadmin
+- `lamplight_admin` owns the schema, runs migrations, and backs the superadmin
   client. It bypasses RLS.
 
 Collapsing these two into one connection string removes the database isolation
@@ -93,13 +93,13 @@ Two institutes, deliberately built from the same template so every slug,
 title, and structure collides. A leak looks like plausible data rather than
 obviously foreign data, which is what the isolation suite is built to catch.
 
-|                 | Grace Bible Institute                                  | Cornerstone Baptist Institute                                              |
-| --------------- | ------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Slug            | `grace`                                                | `cornerstone`                                                              |
-| Domains         | `grace.lectern.app`, `learn.gracebible.test` (primary) | `cornerstone.lectern.app` (primary), `learn.cornerstone.test` (unverified) |
-| Members         | admin, instructor, 3 students                          | admin, instructor, 3 students                                              |
-| Catalog         | 2 programs, 6 courses, 12 modules, 24 lessons          | same shape                                                                 |
-| Application fee | 0 bps (design partner)                                 | 250 bps                                                                    |
+|                 | Grace Bible Institute                                       | Cornerstone Baptist Institute                                                   |
+| --------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Slug            | `grace`                                                     | `cornerstone`                                                                   |
+| Domains         | `grace.lamplight.school`, `learn.gracebible.test` (primary) | `cornerstone.lamplight.school` (primary), `learn.cornerstone.test` (unverified) |
+| Members         | admin, instructor, 3 students                               | admin, instructor, 3 students                                                   |
+| Catalog         | 2 programs, 6 courses, 12 modules, 24 lessons               | same shape                                                                      |
+| Application fee | 0 bps (design partner)                                      | 250 bps                                                                         |
 
 `shared.student@example.test` is a member of **both** institutes, which is the
 cross-tenant identity case from the PRD and the sharpest test in the suite.
@@ -226,6 +226,6 @@ Phase 1 is done. The rest, per the PRD:
 
 GNU Affero General Public License v3.0 or later. See [LICENSE](LICENSE).
 
-AGPL means that if you run a modified Lectern as a network service, you have to
+AGPL means that if you run a modified Lamplight as a network service, you have to
 offer your users the source of your modifications. That is deliberate: the
 point is that institutes can always leave with their platform intact.

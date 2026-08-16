@@ -38,8 +38,8 @@ const envSchema = z.object({
   // Tenancy (phase 2). 'platform' resolves tenants from the Host header,
   // 'single' pins one tenant for self-hosters (PRD section 5.2).
   TENANCY_MODE: z.enum(['platform', 'single']).default('platform'),
-  PLATFORM_APEX_DOMAIN: z.string().min(1).default('lectern.app'),
-  TENANT_SUBDOMAIN_ROOT: z.string().min(1).default('lectern.app'),
+  PLATFORM_APEX_DOMAIN: z.string().min(1).default('lamplight.school'),
+  TENANT_SUBDOMAIN_ROOT: z.string().min(1).default('lamplight.school'),
   SINGLE_TENANT_SLUG: z.string().min(1).optional(),
 
   // Auth (phase 2).
