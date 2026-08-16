@@ -31,6 +31,7 @@ export function LessonPlayer({
   }[];
 }) {
   const [rate, setRate] = useState(1);
+  const [failed, setFailed] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   function changeRate(next: number) {
@@ -49,9 +50,24 @@ export function LessonPlayer({
         preload="metadata"
         src={first.url}
         className="w-full"
+        /**
+         * A resource row can point at an object that is not there: an upload
+         * that was authorised and then abandoned leaves the row behind, by
+         * design, so that a file which does arrive is never orphaned. Without
+         * this the player is simply inert, which reads as the site being
+         * broken rather than as one recording being missing.
+         */
+        onError={() => setFailed(true)}
       >
         <track kind="captions" />
       </audio>
+
+      {failed && (
+        <p className="text-destructive text-sm">
+          This recording could not be loaded. It may still be uploading, or it
+          may need to be uploaded again.
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-muted-foreground text-sm">Speed</span>

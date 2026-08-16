@@ -89,9 +89,14 @@ export default async function CoursePage({
                 {String(index + 1).padStart(2, '0')}
               </span>
               {lesson.open ? (
+                // Open lessons are underlined rather than only being links.
+                // Without a visible affordance the two states render almost
+                // identically, and a student cannot tell what they may click
+                // from what they may not, which is the one thing this page
+                // exists to communicate.
                 <Link
                   href={`/lessons/${lesson.id}`}
-                  className="font-medium underline-offset-4 hover:underline"
+                  className="decoration-muted-foreground/40 font-medium underline underline-offset-4 hover:decoration-current"
                 >
                   {lesson.title}
                 </Link>
@@ -103,12 +108,19 @@ export default async function CoursePage({
               )}
             </span>
 
-            <span className="text-muted-foreground text-xs whitespace-nowrap">
-              {lesson.isFreePreview
-                ? 'Free preview'
-                : lesson.open
-                  ? formatDuration(lesson.durationSeconds)
-                  : 'Locked'}
+            <span className="text-muted-foreground flex items-center gap-2 text-xs whitespace-nowrap">
+              {lesson.isFreePreview && (
+                <span className="rounded-full border px-2 py-0.5">
+                  Free preview
+                </span>
+              )}
+              {lesson.open ? (
+                formatDuration(lesson.durationSeconds)
+              ) : (
+                <span aria-label="Locked" title="Locked">
+                  Locked
+                </span>
+              )}
             </span>
           </li>
         ))}
