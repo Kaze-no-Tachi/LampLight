@@ -29,6 +29,34 @@ import * as schema from '@/db/schema';
  * holds accounts at both.
  */
 
+/**
+ * Holds the most recent password-setup link per address, briefly.
+ *
+ * This exists only because there is no mail transport yet. It is deliberately
+ * short-lived and in-process, which means it works for an operator clicking
+ * provision on a single instance and would not survive a restart or a second
+ * replica. That limitation is acceptable for the one flow that uses it, and it
+ * disappears entirely once sendResetPassword actually sends.
+ */
+const setupLinks = new Map<string, { url: string; expiresAt: number }>();
+const SETUP_LINK_TTL_MS = 60_000;
+
+function stashSetupLink(email: string, url: string): void {
+  setupLinks.set(email.toLowerCase(), {
+    url,
+    expiresAt: Date.now() + SETUP_LINK_TTL_MS,
+  });
+}
+
+/** Reads and clears the link. Single use, so it cannot be replayed. */
+export function takeSetupLink(email: string): string | null {
+  const key = email.toLowerCase();
+  const entry = setupLinks.get(key);
+  setupLinks.delete(key);
+  if (!entry || entry.expiresAt <= Date.now()) return null;
+  return entry.url;
+}
+
 function createAuth() {
   const env = getEnv();
 
@@ -56,6 +84,21 @@ function createAuth() {
       // a platform where an admin grants access rather than self-serve.
       requireEmailVerification: false,
       minPasswordLength: 12,
+
+      /**
+       * Captures the reset link instead of emailing it.
+       *
+       * Provisioning needs to hand a new institute admin a way to set their
+       * own password, and there is no mail transport yet. Rather than invent a
+       * second token scheme, this reuses Better Auth's tested reset flow and
+       * intercepts the URL so the operator can pass it on out of band.
+       *
+       * When mail delivery lands this callback sends instead of stashing, and
+       * nothing else about the flow changes.
+       */
+      sendResetPassword: async ({ user, url }) => {
+        stashSetupLink(user.email, url);
+      },
     },
 
     advanced: {

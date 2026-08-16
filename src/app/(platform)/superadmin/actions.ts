@@ -13,7 +13,7 @@ import {
   tenants,
   users,
 } from '@/db/schema';
-import { getAuth } from '@/lib/auth';
+import { getAuth, takeSetupLink } from '@/lib/auth';
 import { requirePlatformAdmin } from '@/lib/auth/guards';
 import { isValidSlug } from '@/lib/tenancy/host';
 import { invalidateTenantCache } from '@/lib/tenancy/resolve';
@@ -38,7 +38,7 @@ export type ProvisionResult =
       slug: string;
       host: string;
       adminEmail: string;
-      temporaryPassword: string | null;
+      setupUrl: string | null;
     }
   | { status: 'error'; message: string };
 
@@ -82,11 +82,17 @@ export async function provisionTenant(
   const env = getEnv();
   const host = `${slug}.${env.TENANT_SUBDOMAIN_ROOT}`;
 
-  // The invited admin needs a way in. Email delivery is P1 work, so when the
-  // account is new a password is generated and handed back to the operator
-  // exactly once, to pass on out of band. When the person already has an
-  // account, nothing about their credentials is touched and none are shown:
-  // provisioning must never be a way to take over an existing identity.
+  // The invited admin needs a way in, and email delivery is P1 work.
+  //
+  // The operator is handed a single-use expiring link, never a password. That
+  // matters: a password the operator has seen is a credential two people know,
+  // it survives in whatever they pasted it into, and the admin has no way to
+  // be sure it was never used. A reset link is consumed once, expires, and
+  // ends with the admin choosing a secret the operator never learns.
+  //
+  // When the address already has an account, no link is issued and nothing
+  // about their credentials is touched. Provisioning must never become a way
+  // to seize an existing identity by naming it.
   const priorUser = await db
     .select({ id: users.id })
     .from(users)
@@ -94,14 +100,18 @@ export async function provisionTenant(
     .limit(1);
 
   let adminUserId = priorUser[0]?.id ?? null;
-  let temporaryPassword: string | null = null;
+  let setupUrl: string | null = null;
+  const accountCreated = !adminUserId;
 
   if (!adminUserId) {
-    temporaryPassword = randomBytes(18).toString('base64url');
+    // A random password nobody ever sees, immediately superseded by the reset
+    // link below. The account cannot be signed into until the admin sets their
+    // own, because this value is discarded here and never displayed or stored.
+    const placeholder = randomBytes(24).toString('base64url');
     const created = await getAuth().api.signUpEmail({
       body: {
         email: adminEmail,
-        password: temporaryPassword,
+        password: placeholder,
         name: adminEmail.split('@')[0] ?? 'Institute Admin',
       },
       asResponse: false,
@@ -114,6 +124,17 @@ export async function provisionTenant(
         message: 'Could not create the admin account.',
       };
     }
+
+    await getAuth().api.requestPasswordReset({
+      body: { email: adminEmail, redirectTo: `https://${host}/set-password` },
+    });
+
+    // The captured URL is built against Better Auth's configured base, which
+    // is a single value and therefore cannot be right for every institute.
+    // The token is what matters, so it is lifted out and the link rebuilt
+    // against this tenant's own host. Otherwise the operator would be handed a
+    // localhost link, or worse, a link on some other institute's domain.
+    setupUrl = rebuildSetupLink(takeSetupLink(adminEmail), host);
   }
 
   const tenantId = crypto.randomUUID();
@@ -152,7 +173,7 @@ export async function provisionTenant(
         slug,
         host,
         adminEmail,
-        adminAccountCreated: temporaryPassword !== null,
+        adminAccountCreated: accountCreated,
       },
     });
   });
@@ -161,7 +182,7 @@ export async function provisionTenant(
   invalidateTenantCache(host);
   revalidatePath('/superadmin');
 
-  return { status: 'ok', slug, host, adminEmail, temporaryPassword };
+  return { status: 'ok', slug, host, adminEmail, setupUrl };
 }
 
 export type TenantSummary = {
@@ -201,4 +222,29 @@ export async function listTenants(): Promise<TenantSummary[]> {
   }
 
   return [...byId.values()].sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
+/**
+ * Rebuilds a captured reset link against the tenant's own hostname.
+ *
+ * Returns null rather than a wrong link if the shape is not what is expected,
+ * because a setup link pointing at the wrong host is worse than none: it would
+ * send a new institute's admin to somebody else's domain to type a password.
+ */
+function rebuildSetupLink(
+  captured: string | null,
+  host: string,
+): string | null {
+  if (!captured) return null;
+
+  try {
+    const parsed = new URL(captured);
+    const token = parsed.pathname.split('/').filter(Boolean).pop();
+    if (!token) return null;
+
+    const callback = encodeURIComponent(`https://${host}/set-password`);
+    return `https://${host}/api/auth/reset-password/${token}?callbackURL=${callback}`;
+  } catch {
+    return null;
+  }
 }

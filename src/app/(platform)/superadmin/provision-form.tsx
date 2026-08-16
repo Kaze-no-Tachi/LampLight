@@ -6,10 +6,10 @@ import { provisionTenant, type ProvisionResult } from './actions';
 /**
  * The provisioning form.
  *
- * A client component only because it has to show the result, in particular the
- * generated admin password, which is displayed exactly once and never stored
- * anywhere the operator can go back to. Until invite emails land in P1, that
- * one render is the only way the credential reaches the institute.
+ * A client component only because it has to show the result: a single-use
+ * setup link for the new admin. The operator passes it on and never learns a
+ * password. Until invite emails land in P1, that hand-off is manual, but the
+ * secret at the end of it is the admin's alone.
  */
 export function ProvisionForm() {
   const [result, setResult] = useState<ProvisionResult | null>(null);
@@ -64,15 +64,19 @@ export function ProvisionForm() {
           <span className="text-muted-foreground">
             Admin: {result.adminEmail}
           </span>
-          {result.temporaryPassword ? (
-            <span>
-              One-time password, shown once:{' '}
-              <code className="font-mono">{result.temporaryPassword}</code>
+          {result.setupUrl ? (
+            <span className="flex flex-col gap-1">
+              <span>Single-use setup link, send this to the admin:</span>
+              <code className="font-mono break-all">{result.setupUrl}</code>
+              <span className="text-muted-foreground">
+                It expires, is good once, and lets them choose a password you
+                never see.
+              </span>
             </span>
           ) : (
             <span className="text-muted-foreground">
               That address already had an account, so its credentials were left
-              untouched.
+              untouched and no setup link was issued.
             </span>
           )}
         </div>
