@@ -577,3 +577,80 @@ test.describe("an institute's own signup questions", () => {
     expect(closed.status()).toBe(200);
   });
 });
+
+test.describe('a real browser can sign in', () => {
+  test('accepts an Origin matching the host it arrived on', async ({
+    request,
+  }) => {
+    /**
+     * THE TEST THAT WAS MISSING, AND THE BUG IT WOULD HAVE CAUGHT.
+     *
+     * Better Auth trusts its configured baseURL as the only origin, which is
+     * one value and therefore wrong for every institute but at most one. Every
+     * other test in this file passes without ever noticing, because Playwright's
+     * request client sends no Origin header and only browsers do. So sign-in
+     * worked in the whole suite and failed with INVALID_ORIGIN for every real
+     * person on every tenant domain.
+     *
+     * Found by opening the app in an actual browser. Now it is a test.
+     */
+    const email = testEmail('origin');
+    await activate(request, GRACE, GRACE_SEED.id, email);
+
+    const response = await request.post('/api/auth/sign-in/email', {
+      headers: {
+        host: GRACE,
+        origin: `http://${GRACE}`,
+        'content-type': 'application/json',
+        ...client(),
+      },
+      data: { email, password: PASSWORD },
+    });
+
+    expect(
+      response.status(),
+      `sign-in refused an Origin matching its own Host: ${await response.text()}`,
+    ).toBe(200);
+  });
+
+  test('still refuses an Origin from somewhere else', async ({ request }) => {
+    // The protection the check exists for. A page on another site posting here
+    // sends its own Origin with our Host, the two disagree, and it is refused.
+    const email = testEmail('crossorigin');
+    await activate(request, GRACE, GRACE_SEED.id, email);
+
+    const response = await request.post('/api/auth/sign-in/email', {
+      headers: {
+        host: GRACE,
+        origin: 'https://evil.example',
+        'content-type': 'application/json',
+        ...client(),
+      },
+      data: { email, password: PASSWORD },
+    });
+
+    expect(response.ok()).toBe(false);
+  });
+
+  test('refuses an Origin belonging to another institute', async ({
+    request,
+  }) => {
+    // Both are ours, which makes this the sharper case: cornerstone is a real
+    // origin on this platform, and it still has no business posting a sign-in
+    // to grace.
+    const email = testEmail('crosstenant');
+    await activate(request, GRACE, GRACE_SEED.id, email);
+
+    const response = await request.post('/api/auth/sign-in/email', {
+      headers: {
+        host: GRACE,
+        origin: `http://${CORNERSTONE}`,
+        'content-type': 'application/json',
+        ...client(),
+      },
+      data: { email, password: PASSWORD },
+    });
+
+    expect(response.ok()).toBe(false);
+  });
+});

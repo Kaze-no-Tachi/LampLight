@@ -53,6 +53,35 @@ function createAuth() {
   return betterAuth({
     secret: requireEnv('BETTER_AUTH_SECRET'),
 
+    /**
+     * WHICH ORIGINS MAY POST TO THE AUTH ENDPOINTS.
+     *
+     * Better Auth trusts its configured baseURL and nothing else, which is one
+     * value and therefore wrong for every institute but at most one. The
+     * symptom is brutal and easy to miss: sign-in from a real browser fails
+     * with INVALID_ORIGIN on every tenant domain, while every server-to-server
+     * test passes, because only browsers send an Origin header.
+     *
+     * The rule here is to trust an origin exactly when it matches the host the
+     * request arrived on. That keeps the protection the check exists for: a
+     * page on evil.example posting here sends its own Origin with our Host, the
+     * two disagree, and it is refused. What it drops is the assumption that
+     * the platform has one hostname.
+     *
+     * The host itself is not taken on trust for anything else. It still has to
+     * resolve to an active institute before any page renders, which is a
+     * database question this function cannot ask and does not need to: an
+     * unknown host reaching sign-in gets a session for an institute that does
+     * not exist, which grants nothing anywhere.
+     */
+    trustedOrigins: (request) => {
+      const host = request?.headers.get('host');
+      if (!host) return [];
+      // Both schemes, because development is http and production is https,
+      // and the scheme is not recoverable from the Host header.
+      return [`https://${host}`, `http://${host}`];
+    },
+
     database: drizzleAdapter(drizzle(pool, { schema }), {
       provider: 'pg',
       // Our tables are plural: users, sessions, accounts, verifications.
