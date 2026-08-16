@@ -1,0 +1,122 @@
+import {
+  bigint,
+  boolean,
+  foreignKey,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from 'drizzle-orm/pg-core';
+import { courses } from './catalog';
+import { lessonResourceKind } from './enums';
+import { tenants } from './tenancy';
+
+export const modules = pgTable(
+  'modules',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    courseId: uuid('course_id').notNull(),
+    title: text('title').notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique('modules_tenant_id_id_key').on(table.tenantId, table.id),
+    index('modules_tenant_id_course_id_idx').on(table.tenantId, table.courseId),
+    foreignKey({
+      name: 'modules_tenant_id_course_id_fk',
+      columns: [table.tenantId, table.courseId],
+      foreignColumns: [courses.tenantId, courses.id],
+    }).onDelete('cascade'),
+  ],
+);
+
+/**
+ * Lessons hang off modules, so the course a lesson belongs to is reached by
+ * joining through modules. The access predicate needs that course id on every
+ * call, which is why the lesson repository exposes a lessonWithCourse read
+ * rather than a bare lesson select.
+ *
+ * Slug uniqueness is scoped to the module. If lesson URLs later become
+ * course-scoped rather than module-scoped, this needs to widen to the course,
+ * which means denormalising course_id onto lessons.
+ */
+export const lessons = pgTable(
+  'lessons',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    moduleId: uuid('module_id').notNull(),
+    title: text('title').notNull(),
+    slug: text('slug').notNull(),
+    contentMd: text('content_md'),
+    durationSeconds: integer('duration_seconds'),
+    isFreePreview: boolean('is_free_preview').notNull().default(false),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique('lessons_tenant_id_id_key').on(table.tenantId, table.id),
+    unique('lessons_tenant_id_module_id_slug_key').on(
+      table.tenantId,
+      table.moduleId,
+      table.slug,
+    ),
+    index('lessons_tenant_id_module_id_idx').on(table.tenantId, table.moduleId),
+    foreignKey({
+      name: 'lessons_tenant_id_module_id_fk',
+      columns: [table.tenantId, table.moduleId],
+      foreignColumns: [modules.tenantId, modules.id],
+    }).onDelete('cascade'),
+  ],
+);
+
+/**
+ * Media and attachments. storage_key is the R2 object key and is always
+ * prefixed t/{tenant_id}/ server-side, never taken from the client
+ * (PRD section 5.5).
+ */
+export const lessonResources = pgTable(
+  'lesson_resources',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    lessonId: uuid('lesson_id').notNull(),
+    kind: lessonResourceKind('kind').notNull(),
+    storageKey: text('storage_key'),
+    url: text('url'),
+    filename: text('filename'),
+    byteSize: bigint('byte_size', { mode: 'number' }),
+    isDownloadable: boolean('is_downloadable').notNull().default(false),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique('lesson_resources_tenant_id_id_key').on(table.tenantId, table.id),
+    index('lesson_resources_tenant_id_lesson_id_idx').on(
+      table.tenantId,
+      table.lessonId,
+    ),
+    foreignKey({
+      name: 'lesson_resources_tenant_id_lesson_id_fk',
+      columns: [table.tenantId, table.lessonId],
+      foreignColumns: [lessons.tenantId, lessons.id],
+    }).onDelete('cascade'),
+  ],
+);

@@ -1,0 +1,207 @@
+import {
+  findCourseBySlug,
+  listPublishedCourses,
+  listPublishedPrograms,
+} from '@/db/repositories/catalog';
+import {
+  findMembership,
+  hasActiveEntitlement,
+  isInstructorOf,
+  listEnrollments,
+} from '@/db/repositories/entitlements';
+import {
+  findLessonWithCourse,
+  listLessonResources,
+  listLessonsForCourse,
+} from '@/db/repositories/lessons';
+import type { TenantScope } from '@/db/scope';
+import {
+  courseBySlug,
+  firstGatedLesson,
+  programBySlug,
+  userByKey,
+  type SeedTenant,
+} from '@/db/seed-data';
+
+/**
+ * The registry of every read path in the codebase.
+ *
+ * Each entry runs a repository function under `scope` while referring to
+ * identifiers owned by `subject`, and returns the identifiers of rows in the
+ * result that genuinely belong to `subject`.
+ *
+ * That return contract is what makes one registry serve both directions:
+ *
+ *   scope.tenantId === subject.id  ->  the result must be non-empty, which
+ *                                      proves the assertion is exercising a
+ *                                      real query rather than passing because
+ *                                      the fixture is empty.
+ *   scope.tenantId !== subject.id  ->  the result must be empty. Anything
+ *                                      returned is, by construction, another
+ *                                      tenant's data.
+ *
+ * The two tenants share every slug, so a lookup by slug under the wrong tenant
+ * still finds a row: the caller's own. Filtering the result down to rows owned
+ * by `subject` is what tells "correctly returned my own lookalike row" apart
+ * from "leaked the other tenant's row".
+ *
+ * ADDING A READ PATH IN A LATER PHASE MEANS ADDING IT HERE, IN THE SAME
+ * COMMIT. tests/isolation/read-path-coverage.test.ts checks this registry
+ * against the exported functions of src/db/repositories and fails when one is
+ * missing.
+ */
+export type ReadPath = {
+  /** Must match "<module>.<exportedFunction>". */
+  name: string;
+  run(scope: TenantScope, subject: SeedTenant): Promise<string[]>;
+};
+
+/** Keeps only the ids that belong to `subject`, which is the leak signal. */
+function ownedBySubject(ids: string[], subjectIds: Set<string>): string[] {
+  return ids.filter((id) => subjectIds.has(id));
+}
+
+function courseIds(tenant: SeedTenant): Set<string> {
+  return new Set(tenant.courses.map((course) => course.id));
+}
+
+function lessonIds(tenant: SeedTenant): Set<string> {
+  return new Set(
+    tenant.courses.flatMap((course) =>
+      course.modules.flatMap((courseModule) =>
+        courseModule.lessons.map((lesson) => lesson.id),
+      ),
+    ),
+  );
+}
+
+export const READ_PATHS: ReadPath[] = [
+  {
+    name: 'catalog.listPublishedCourses',
+    async run(scope, subject) {
+      const rows = await listPublishedCourses(scope);
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        courseIds(subject),
+      );
+    },
+  },
+  {
+    name: 'catalog.findCourseBySlug',
+    async run(scope, subject) {
+      // Both tenants own a course with this slug, so the wrong-tenant call
+      // returns a plausible row rather than nothing.
+      const target = courseBySlug(subject, 'church-history');
+      const row = await findCourseBySlug(scope, target.slug);
+      return ownedBySubject(row ? [row.id] : [], courseIds(subject));
+    },
+  },
+  {
+    name: 'catalog.listPublishedPrograms',
+    async run(scope, subject) {
+      const rows = await listPublishedPrograms(scope);
+      const subjectIds = new Set(
+        subject.programs.map((program) => program.id),
+      );
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        subjectIds,
+      );
+    },
+  },
+  {
+    name: 'lessons.findLessonWithCourse',
+    async run(scope, subject) {
+      const lesson = firstGatedLesson(
+        courseBySlug(subject, 'systematic-theology-i'),
+      );
+      const row = await findLessonWithCourse(scope, lesson.id);
+      return ownedBySubject(row ? [row.id] : [], lessonIds(subject));
+    },
+  },
+  {
+    name: 'lessons.listLessonsForCourse',
+    async run(scope, subject) {
+      const course = courseBySlug(subject, 'new-testament-survey');
+      const rows = await listLessonsForCourse(scope, course.id);
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        lessonIds(subject),
+      );
+    },
+  },
+  {
+    name: 'lessons.listLessonResources',
+    async run(scope, subject) {
+      const lesson = firstGatedLesson(
+        courseBySlug(subject, 'old-testament-survey'),
+      );
+      const rows = await listLessonResources(scope, lesson.id);
+      const resourceIds = new Set(
+        subject.courses.flatMap((course) =>
+          course.modules.flatMap((courseModule) =>
+            courseModule.lessons.map((entry) => entry.resourceId),
+          ),
+        ),
+      );
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        resourceIds,
+      );
+    },
+  },
+  {
+    name: 'entitlements.findMembership',
+    async run(scope, subject) {
+      // The subject's admin is a member of the subject tenant only, so any
+      // membership returned under another tenant's scope is a leak.
+      const admin = userByKey(subject, 'admin');
+      const row = await findMembership(scope, admin.id);
+      return row ? [admin.id] : [];
+    },
+  },
+  {
+    name: 'entitlements.isInstructorOf',
+    async run(scope, subject) {
+      const instructor = userByKey(subject, 'instructor');
+      const course = courseBySlug(subject, 'old-testament-survey');
+      const assigned = await isInstructorOf(scope, instructor.id, course.id);
+      return assigned ? [course.id] : [];
+    },
+  },
+  {
+    name: 'entitlements.hasActiveEntitlement',
+    async run(scope, subject) {
+      // The shared student holds this entitlement at both tenants, so a query
+      // that lost its tenant filter finds the other tenant's enrollment row
+      // and wrongly reports access. See the fixture note on shared-hermeneutics.
+      const shared = userByKey(subject, 'shared');
+      const course = courseBySlug(subject, 'hermeneutics');
+      const entitled = await hasActiveEntitlement(scope, shared.id, course.id);
+      return entitled ? [course.id] : [];
+    },
+  },
+  {
+    name: 'entitlements.listEnrollments',
+    async run(scope, subject) {
+      const shared = userByKey(subject, 'shared');
+      const rows = await listEnrollments(scope, shared.id);
+      const subjectEnrollmentIds = new Set(
+        subject.enrollments.map((enrollment) => enrollment.id),
+      );
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        subjectEnrollmentIds,
+      );
+    },
+  },
+];
+
+/**
+ * Read paths whose positive case is legitimately empty, so the "non-empty
+ * under the owning tenant" assertion does not apply. Kept explicit rather than
+ * skipped silently. Empty today, and an entry here should be argued for.
+ */
+export const READ_PATHS_WITHOUT_POSITIVE_CASE: string[] = [];
+
+export { programBySlug };
