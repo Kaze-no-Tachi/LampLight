@@ -80,7 +80,17 @@ first and then a `decide*` predicate. The one inline comparison is
       it for free preview and entitlement, not for admin or the assigned
       instructor), and fixed `decideCourseAuthoring` to hide an archived
       course from its own author too. Commit `3c43b90`.
-- [ ] **Chunk 4, teach** with the coming-soon panels.
+- [x] **Chunk 4, teach.** `/teach` is a summary now: title, enrolled count,
+      one "Manage lessons" link into the editor, and Grading/Assessments/
+      Roster shown honestly as coming soon rather than left off or wired to
+      something that 404s. The inline `viewer.role === 'student'` comparison
+      is gone, replaced by a new `can()` action, `teach:view`. Left as a noted
+      gap rather than solved here: retiring `/teach`'s old inline view removed
+      the only UI for adding a second section to a course (`addModuleAction`
+      still exists and works, it just has no caller left); giving it one
+      needs its own thought about progressive disclosure, since the editor
+      page is tested to never mention "section" at all for the common
+      one-section case. Commit `eb15a68`.
 - [ ] **Chunk 5, cleanup**: delete `/settings/catalog` and
       `/teach/courses/[courseId]`, rename the nav `Signup` link, collapse the
       duplicate uploader and badge.

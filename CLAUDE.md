@@ -68,13 +68,21 @@ waits for `migrate` to exit successfully. The box exposes nothing but SSH, and
 ## Outstanding
 
 - `docs/plans/course-flow-round-2.md` is the live piece of work, with progress
-  marked. Chunks 1 through 3 are done; chunk 4 (`/teach` with the coming-soon
-  panels, replacing the inline role comparison with `can`) is next. `/teach`
-  itself still renders its old inline modules-and-lessons view
-  (`teach-course.tsx`, `lesson-row.tsx`) and still links to
-  `/teach/courses/[courseId]`; chunk 4 is what moves it to a summary plus
-  "Manage lessons" into the new editor, after which `/teach/courses/[courseId]`
-  and `/settings/catalog` are dead code chunk 5 deletes.
+  marked. Chunks 1 through 4 are done; chunk 5 (cleanup: delete
+  `/settings/catalog` and `/teach/courses/[courseId]`, rename the nav
+  `Signup` link, collapse the duplicate uploader and badge) is next and last.
+  Nothing links to either page anymore, so deleting them should be
+  straightforward, but grep first rather than trusting that.
+- Adding a second section to a course has no UI right now. `/teach` used to
+  have an inline "Add module" form; retiring that page in chunk 4 removed it
+  along with everything else /teach no longer renders, and the replacement
+  editor (`/courses/[courseId]/edit`, chunk 3) never had one. The server
+  action, `addModuleAction` in `src/app/(tenant)/teach/actions.ts`, still
+  works and has no caller. Whoever adds this back needs to design around
+  `tests/e2e/catalog.spec.ts`'s "never mentions sections" test: the editor is
+  deliberately silent about sections for the common one-section course, so
+  the control needs progressive disclosure, not a form that is just always
+  there.
 - UI library decision, not yet started: the user wants screens rebuilt on
   React Suite (rsuite), modals included. Nothing uses it yet; every screen so
   far is plain Tailwind plus native elements (`<dialog>` for
