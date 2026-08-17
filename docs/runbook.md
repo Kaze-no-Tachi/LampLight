@@ -321,9 +321,13 @@ half of the same fix. Under the service's Advanced settings, override the
 default with:
 
 ```
-docker compose -p <dokploy-project-name> -f ./docker-compose.prod.yml \
-  up -d --pull always --remove-orphans --wait
+compose -p <dokploy-project-name> -f ./docker-compose.prod.yml up -d --pull always --remove-orphans --wait
 ```
+
+**Leave `docker` off the front.** The field prepends it, so pasting the whole
+command produces `docker docker compose ...` and the deploy fails on
+`unknown shorthand flag: 'p'`. Dokploy shows its default _with_ the `docker`,
+which is exactly the trap.
 
 `--wait` blocks until healthchecks pass, so a broken release fails the deploy
 instead of reporting success over a down site. `--build` is dropped from
