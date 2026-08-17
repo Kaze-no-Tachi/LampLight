@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { courses, lessonResources, lessons, modules } from '@/db/schema';
 import type { TenantScope } from '@/db/scope';
 
@@ -18,14 +18,30 @@ export type LessonWithCourse = {
   /** The instructor's notes for this lesson, markdown. */
   contentMd: string | null;
   isFreePreview: boolean;
+  /** Draft until somebody says otherwise. See the note on the options below. */
+  isPublished: boolean;
   durationSeconds: number | null;
   moduleId: string;
   courseId: string;
   /** Carried along because the player shows which course it is playing from. */
   courseTitle: string;
   courseSlug: string;
+  sortOrder: number;
 };
 
+/**
+ * Archived is always excluded here, with no option to include it: an archived
+ * lesson is hidden from its own author too, not only from students, the same
+ * rule an archived course gets (see findCourseBySlug beside
+ * listPublishedCourses in ./catalog.ts).
+ *
+ * Draft is deliberately NOT filtered here. `findLessonWithCourse` is the read
+ * decideLessonAccess opens with, and the predicate needs to see a draft lesson
+ * to refuse it correctly for an ordinary student while still granting it to
+ * admin and an assigned instructor: filtering it out here would deny every
+ * branch, staff included, before the predicate ever got to decide. Listing
+ * (below) is a different question and filters draft by default.
+ */
 export async function findLessonWithCourse(
   scope: TenantScope,
   lessonId: string,
@@ -37,49 +53,13 @@ export async function findLessonWithCourse(
       slug: lessons.slug,
       contentMd: lessons.contentMd,
       isFreePreview: lessons.isFreePreview,
+      isPublished: lessons.isPublished,
       durationSeconds: lessons.durationSeconds,
       moduleId: lessons.moduleId,
       courseId: modules.courseId,
       courseTitle: courses.title,
       courseSlug: courses.slug,
-    })
-    .from(lessons)
-    .innerJoin(
-      modules,
-      and(
-        eq(modules.tenantId, scope.tenantId),
-        eq(modules.id, lessons.moduleId),
-      ),
-    )
-    .innerJoin(
-      courses,
-      and(
-        eq(courses.tenantId, scope.tenantId),
-        eq(courses.id, modules.courseId),
-      ),
-    )
-    .where(and(eq(lessons.tenantId, scope.tenantId), eq(lessons.id, lessonId)))
-    .limit(1);
-
-  return rows[0] ?? null;
-}
-
-export async function listLessonsForCourse(
-  scope: TenantScope,
-  courseId: string,
-): Promise<LessonWithCourse[]> {
-  return scope.tx
-    .select({
-      id: lessons.id,
-      title: lessons.title,
-      slug: lessons.slug,
-      contentMd: lessons.contentMd,
-      isFreePreview: lessons.isFreePreview,
-      durationSeconds: lessons.durationSeconds,
-      moduleId: lessons.moduleId,
-      courseId: modules.courseId,
-      courseTitle: courses.title,
-      courseSlug: courses.slug,
+      sortOrder: lessons.sortOrder,
     })
     .from(lessons)
     .innerJoin(
@@ -97,7 +77,67 @@ export async function listLessonsForCourse(
       ),
     )
     .where(
-      and(eq(lessons.tenantId, scope.tenantId), eq(modules.courseId, courseId)),
+      and(
+        eq(lessons.tenantId, scope.tenantId),
+        eq(lessons.id, lessonId),
+        isNull(lessons.archivedAt),
+      ),
+    )
+    .limit(1);
+
+  return rows[0] ?? null;
+}
+
+/**
+ * `includeUnpublished` is for the editor, which has to show an author their
+ * own draft in the list they manage; every caller that passes it has already
+ * established the viewer may author the course. Archived stays excluded
+ * either way, matching findLessonWithCourse.
+ */
+export type LessonVisibility = { includeUnpublished?: boolean };
+
+export async function listLessonsForCourse(
+  scope: TenantScope,
+  courseId: string,
+  options: LessonVisibility = {},
+): Promise<LessonWithCourse[]> {
+  return scope.tx
+    .select({
+      id: lessons.id,
+      title: lessons.title,
+      slug: lessons.slug,
+      contentMd: lessons.contentMd,
+      isFreePreview: lessons.isFreePreview,
+      isPublished: lessons.isPublished,
+      durationSeconds: lessons.durationSeconds,
+      moduleId: lessons.moduleId,
+      courseId: modules.courseId,
+      courseTitle: courses.title,
+      courseSlug: courses.slug,
+      sortOrder: lessons.sortOrder,
+    })
+    .from(lessons)
+    .innerJoin(
+      modules,
+      and(
+        eq(modules.tenantId, scope.tenantId),
+        eq(modules.id, lessons.moduleId),
+      ),
+    )
+    .innerJoin(
+      courses,
+      and(
+        eq(courses.tenantId, scope.tenantId),
+        eq(courses.id, modules.courseId),
+      ),
+    )
+    .where(
+      and(
+        eq(lessons.tenantId, scope.tenantId),
+        eq(modules.courseId, courseId),
+        isNull(lessons.archivedAt),
+        ...(options.includeUnpublished ? [] : [eq(lessons.isPublished, true)]),
+      ),
     )
     .orderBy(asc(modules.sortOrder), asc(lessons.sortOrder));
 }

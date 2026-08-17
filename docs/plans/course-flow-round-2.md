@@ -66,14 +66,47 @@ first and then a `decide*` predicate. The one inline comparison is
 - [x] **Chunk 2a, shelf queries.** `listShelfCourses` and
       `listProgramProgress`, registered in the isolation harness. Commit
       `001c84b`.
-- [ ] **Chunk 2b, the screens.** `/catalogue`, `/catalogue/[slug]`, `/courses`
+- [x] **Chunk 2b, the screens.** `/catalogue`, `/catalogue/[slug]`, `/courses`
       as the student shelf, `enrollAction`, browser specs updated for the moved
-      URLs.
-- [ ] **Chunk 3, one editor** at `/courses/[courseId]/edit`.
-- [ ] **Chunk 4, teach** with the coming-soon panels.
-- [ ] **Chunk 5, cleanup**: delete `/settings/catalog` and
-      `/teach/courses/[courseId]`, rename the nav `Signup` link, collapse the
-      duplicate uploader and badge.
+      URLs. Along the way: fixed `can()`'s course:enroll to ask
+      `hasActiveEntitlement` rather than a direct-course lookup, so a
+      program-entitled student is not offered a redundant second enrolment,
+      and published every seeded lesson so the shelf's seeded progress
+      fixture is actually visible. Commit `13d5f60`.
+- [x] **Chunk 3, one editor** at `/courses/[courseId]/edit`, one role-driven
+      `LessonList`, lesson publish/archive/reorder, course archive that
+      actually frees its slug (migration 0009). Along the way: closed the gap
+      where `is_published` gated nothing (`decideLessonAccess` now requires
+      it for free preview and entitlement, not for admin or the assigned
+      instructor), and fixed `decideCourseAuthoring` to hide an archived
+      course from its own author too. Commit `3c43b90`.
+- [x] **Chunk 4, teach.** `/teach` is a summary now: title, enrolled count,
+      one "Manage lessons" link into the editor, and Grading/Assessments/
+      Roster shown honestly as coming soon rather than left off or wired to
+      something that 404s. The inline `viewer.role === 'student'` comparison
+      is gone, replaced by a new `can()` action, `teach:view`. Left as a noted
+      gap rather than solved here: retiring `/teach`'s old inline view removed
+      the only UI for adding a second section to a course (`addModuleAction`
+      still exists and works, it just has no caller left); giving it one
+      needs its own thought about progressive disclosure, since the editor
+      page is tested to never mention "section" at all for the common
+      one-section case. Commit `eb15a68`.
+- [x] **Chunk 5, cleanup.** Deleted `/settings/catalog` and
+      `/teach/courses/[courseId]`. Course and program lifecycle (create,
+      publish/withdraw, instructor assign/remove, program-course linking)
+      moved from `settings/catalog` into `teach/catalog-actions.ts` and now
+      renders inline on `/teach`: admin sees a "Create course" form, a
+      Publish/Withdraw toggle and instructor controls on each course card,
+      and a new Programs section below the course list. The plan text did
+      not say where program management and instructor assignment should
+      land once `/settings/catalog` was gone; folding them into `/teach`
+      rather than dropping them was a decision made with the user, not an
+      oversight found later. Collapsed the duplicate XHR uploader
+      (`lesson-row.tsx`, `attachments.tsx`) into `uploadWithProgress` in
+      `lib/media/uploads.ts`, and the duplicate free-preview badge markup
+      into `FreePreviewBadge` exported from `lesson-list.tsx`. Nav:
+      `Catalogue` points at `/catalogue`, the admin `Signup` link now reads
+      `Signup settings`. Commit `9b192cc`.
 
 ## Work
 

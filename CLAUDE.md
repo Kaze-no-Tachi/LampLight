@@ -67,8 +67,30 @@ waits for `migrate` to exit successfully. The box exposes nothing but SSH, and
 
 ## Outstanding
 
-- `docs/plans/course-flow-round-2.md` is the live piece of work, with progress
-  marked. Chunks 1 and 2a are done.
+- `docs/plans/course-flow-round-2.md` is done: all five chunks complete,
+  including chunk 5's cleanup (`settings/catalog` and
+  `teach/courses/[courseId]` deleted, catalogue administration folded into
+  `/teach`).
+- Adding a second section to a course has no UI right now. `/teach` used to
+  have an inline "Add module" form; retiring that page in chunk 4 removed it
+  along with everything else /teach no longer renders, and the replacement
+  editor (`/courses/[courseId]/edit`, chunk 3) never had one. The server
+  action, `addModuleAction` in `src/app/(tenant)/teach/actions.ts`, still
+  works and has no caller. Whoever adds this back needs to design around
+  `tests/e2e/catalog.spec.ts`'s "never mentions sections" test: the editor is
+  deliberately silent about sections for the common one-section course, so
+  the control needs progressive disclosure, not a form that is just always
+  there.
+- rsuite adoption is under way, plan and progress in
+  `docs/plans/rsuite-adoption.md`. Decided: coexists with Tailwind (Tailwind
+  keeps layout/spacing/typography, rsuite takes interactive controls only),
+  one screen per commit. Phase 1 (foundations: rsuite installed,
+  `RsuiteProvider`, the `--rs-*` theming bridge in
+  `src/lib/theme/theme.ts`'s `resolveRsuiteTokens`) and phase 2 (the two
+  native dialogs, now rsuite `Modal`, via a new shared `ConfirmModal` for
+  the two archive confirmations) are both done. Next: phase 3, forms and
+  controls on `/teach` (publish `Toggle`, instructor `SelectPicker`, the
+  course/program forms).
 - Roll the Cloudflare API token and the Brevo API key, both exposed in an
   earlier session transcript.
 - R2 bucket wants recreating in ENAM: it was made in APAC and location is fixed

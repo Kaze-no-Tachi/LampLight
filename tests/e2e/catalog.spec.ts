@@ -6,6 +6,7 @@ import {
   url,
 } from '../helpers/browser';
 import { expect, test } from '../helpers/test';
+import { courseBySlug, GRACE } from '@/db/seed-data';
 
 /**
  * Building a catalogue, which is where a real institute starts.
@@ -25,7 +26,7 @@ const NAME = `Church History ${Date.now()}`;
 const SLUG_HINT = 'input[placeholder*="Web address"]';
 
 async function openCatalog(page: import('@playwright/test').Page) {
-  await page.goto(url(GRACE_HOST, '/settings/catalog'));
+  await page.goto(url(GRACE_HOST, '/teach'));
 }
 
 test.describe('an admin building a catalogue', () => {
@@ -39,15 +40,25 @@ test.describe('an admin building a catalogue', () => {
     await page.locator('input[placeholder="Old Testament Survey"]').fill(NAME);
     await page.locator(SLUG_HINT).first().fill('church-history-test');
     await page.getByRole('button', { name: /create course/i }).click();
-    await expect(page.getByText(/Course created/i)).toBeVisible();
 
-    const row = page.locator('li', { hasText: NAME }).first();
+    // Lands in the editor, not back on this list (round 2 decision).
+    await page.waitForURL('**/courses/**/edit');
+    await expect(
+      page.getByRole('heading', { name: NAME, exact: true }),
+    ).toBeVisible();
+
+    await openCatalog(page);
+    const row = page
+      .locator('[data-testid="course-card"]', {
+        hasText: NAME,
+      })
+      .first();
     await expect(row).toContainText('not published');
-    await expect(row).toContainText('0 lessons');
+    await expect(row).toContainText('No lessons yet');
 
     // Unpublished means invisible, which is the half that is easy to get wrong.
     const visitor = await context.newPage();
-    await visitor.goto(url(GRACE_HOST, '/courses'));
+    await visitor.goto(url(GRACE_HOST, '/catalogue'));
     await expect(visitor.locator('main')).not.toContainText(NAME);
 
     await row.getByRole('button', { name: /^Publish$/ }).click();
@@ -59,7 +70,7 @@ test.describe('an admin building a catalogue', () => {
     // And withdrawing takes it back out, which is the half everybody forgets.
     await page.reload();
     await page
-      .locator('li', { hasText: NAME })
+      .locator('[data-testid="course-card"]', { hasText: NAME })
       .first()
       .getByRole('button', { name: /^Withdraw$/ })
       .click();
@@ -94,9 +105,14 @@ test.describe('an admin building a catalogue', () => {
     const title = `Homiletics ${Date.now()}`;
     await page.locator('input[placeholder="Old Testament Survey"]').fill(title);
     await page.getByRole('button', { name: /create course/i }).click();
-    await expect(page.getByText(/Course created/i)).toBeVisible();
+    await page.waitForURL('**/courses/**/edit');
 
-    const row = page.locator('li', { hasText: title }).first();
+    await openCatalog(page);
+    const row = page
+      .locator('[data-testid="course-card"]', {
+        hasText: title,
+      })
+      .first();
     await expect(row).toContainText('Nobody yet');
 
     // By value rather than label: the option reads "Name (email)" and
@@ -121,13 +137,20 @@ test.describe('an admin building a catalogue', () => {
     await theirs.close();
   });
 
-  test('is not something an instructor can reach', async ({ page }) => {
+  test('is not usable by an instructor', async ({ page }) => {
     // Deciding what the institute teaches, and who teaches it, is not an
-    // instructor's call even though editing the content is.
+    // instructor's call even though editing the content is: the same /teach
+    // page an instructor reaches shows none of the catalogue controls that
+    // used to live on their own settings page.
     await signIn(page, PEOPLE.instructor);
+    await page.goto(url(GRACE_HOST, '/teach'));
 
-    const response = await page.goto(url(GRACE_HOST, '/settings/catalog'));
-    expect(response?.status()).toBe(404);
+    await expect(
+      page.getByRole('button', { name: /create course/i }),
+    ).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Publish$/ })).toHaveCount(
+      0,
+    );
   });
 });
 
@@ -140,11 +163,11 @@ test.describe('every admin screen is reachable', () => {
     await page.goto(url(GRACE_HOST, '/account'));
 
     for (const [label, path] of [
-      ['Catalogue', '/settings/catalog'],
+      ['Catalogue', '/catalogue'],
       ['People', '/settings/people'],
       ['Branding', '/settings/branding'],
       ['Domains', '/settings/domains'],
-      ['Signup', '/settings/signup'],
+      ['Signup settings', '/settings/signup'],
     ] as const) {
       const link = page.getByRole('link', { name: label, exact: true });
       await expect(link, `${label} should be in the header`).toBeVisible();
@@ -156,7 +179,7 @@ test.describe('every admin screen is reachable', () => {
     await signIn(page, PEOPLE.student);
     await page.goto(url(GRACE_HOST, '/account'));
 
-    for (const label of ['Catalogue', 'Domains', 'Signup'] as const) {
+    for (const label of ['Catalogue', 'Domains', 'Signup settings'] as const) {
       await expect(
         page.getByRole('link', { name: label, exact: true }),
       ).toHaveCount(0);
@@ -188,7 +211,7 @@ test.describe('programs', () => {
     await expect(row).toContainText('not published');
 
     const visitor = await context.newPage();
-    await visitor.goto(url(GRACE_HOST, '/courses'));
+    await visitor.goto(url(GRACE_HOST, '/catalogue'));
     await expect(visitor.locator('main')).not.toContainText(title);
 
     await row.getByRole('button', { name: /^Publish$/ }).click();
@@ -252,14 +275,10 @@ test.describe('adding lessons', () => {
       .locator('input[placeholder="Old Testament Survey"]')
       .fill(course);
     await page.getByRole('button', { name: /create course/i }).click();
-    await expect(page.getByText(/Course created/i)).toBeVisible();
 
-    await page
-      .locator('li', { hasText: course })
-      .first()
-      .getByRole('link', { name: /edit content/i })
-      .click();
-    await page.waitForURL('**/teach/courses/**');
+    // Lands in the editor directly (round 2 decision), no second click to
+    // "edit content" needed.
+    await page.waitForURL('**/courses/**/edit');
 
     // The word does not appear on the screen at all.
     await expect(page.locator('main')).not.toContainText('section', {
@@ -268,27 +287,39 @@ test.describe('adding lessons', () => {
 
     const lesson = `Visiting the sick ${Date.now()}`;
     await page.getByRole('button', { name: /^Add lesson$/ }).click();
-    await page.locator('dialog input[name="title"]').fill(lesson);
-    await page.locator('dialog input[name="isFreePreview"]').check();
-    await page
-      .locator('dialog')
-      .getByRole('button', { name: /^Add lesson$/ })
-      .click();
+    const addLessonDialog = page.getByRole('dialog');
+    await addLessonDialog.locator('input[name="title"]').fill(lesson);
+    await addLessonDialog.locator('input[name="isFreePreview"]').check();
+    await addLessonDialog.getByRole('button', { name: /^Add lesson$/ }).click();
+    // The modal's own exit animation still covers the page for a moment
+    // after submit; waiting for it to actually leave the DOM is what keeps
+    // the next click from landing on a fading backdrop instead of the row
+    // beneath it.
+    await expect(addLessonDialog).toBeHidden();
 
     await expect(page.locator('main')).toContainText(lesson);
 
-    // Publish it and check a visitor gets the free preview lesson, which is
-    // the whole chain: created, listed, visible.
+    // A new lesson is a draft (round 2, chunk 3), free preview or not: being
+    // open to everyone is a different question from being finished. Publish
+    // the lesson itself before the course, or a student would find nothing
+    // there regardless of what the course-level toggle says.
+    const lessonRow = page.locator('li', { hasText: lesson });
+    await expect(lessonRow).toContainText('draft');
+    await lessonRow.getByRole('button', { name: /^Publish$/ }).click();
+    await expect(lessonRow).toContainText('published');
+
+    // Publish the course and check a visitor gets the free preview lesson,
+    // which is the whole chain: created, listed, visible.
     await openCatalog(page);
     await page
-      .locator('li', { hasText: course })
+      .locator('[data-testid="course-card"]', { hasText: course })
       .first()
       .getByRole('button', { name: /^Publish$/ })
       .click();
     await expect(page.getByText('Published.')).toBeVisible();
 
     const visitor = await context.newPage();
-    await visitor.goto(url(GRACE_HOST, '/courses'));
+    await visitor.goto(url(GRACE_HOST, '/catalogue'));
     await visitor.getByRole('link', { name: course }).first().click();
     await expect(visitor.locator('main')).toContainText(lesson);
   });
@@ -338,5 +369,207 @@ test.describe('your own account', () => {
     await page.getByRole('button', { name: /^Change password$/ }).click();
 
     await expect(page.getByText(/Check your current password/i)).toBeVisible();
+  });
+});
+
+test.describe('the student shelf and self-enrolment', () => {
+  // student1 holds old-testament-survey, new-testament-survey and
+  // systematic-theology-i through the diploma program (seed), and neither
+  // church-history nor hermeneutics. Two different unheld courses, so the
+  // enrolling test and the signed-out test cannot interfere with each other.
+  const UNHELD_ENROLLABLE = 'church-history';
+  const UNHELD_FOR_VISITOR = 'hermeneutics';
+  const HELD_VIA_PROGRAM = 'old-testament-survey';
+
+  test('enrols from the catalogue, and the course appears on the shelf', async ({
+    page,
+  }) => {
+    await signIn(page, PEOPLE.student);
+    await page.goto(url(GRACE_HOST, `/catalogue/${UNHELD_ENROLLABLE}`));
+
+    await expect(page.getByRole('button', { name: /^Enrol$/ })).toBeVisible();
+
+    await page.getByRole('button', { name: /^Enrol$/ }).click();
+    await expect(
+      page.getByText(/you are enrolled in this course/i),
+    ).toBeVisible();
+
+    await page.goto(url(GRACE_HOST, '/courses'));
+    const row = page.locator('li', { hasText: 'Church History' });
+    await expect(row).toBeVisible();
+    // No progress yet, so the shelf offers Start rather than Continue.
+    await expect(row.getByRole('link', { name: /^Start$/ })).toBeVisible();
+
+    // Cleanup, through the admin path this suite already trusts: an
+    // unrevoked enrolment here would make a second run of this test find the
+    // Enrol button already gone.
+    await signIn(page, PEOPLE.admin);
+    await page.goto(url(GRACE_HOST, '/settings/people'));
+    await page.getByRole('link', { name: /First Student/ }).click();
+    await page.waitForURL('**/settings/people/**');
+    await page
+      .locator('li', { hasText: 'Church History' })
+      .getByRole('button', { name: /remove/i })
+      .click();
+    await expect(page.getByText('Access removed.')).toBeVisible();
+  });
+
+  test('a course already held offers no enrol button', async ({ page }) => {
+    await signIn(page, PEOPLE.student);
+    await page.goto(url(GRACE_HOST, `/catalogue/${HELD_VIA_PROGRAM}`));
+
+    await expect(
+      page.getByText(/you are enrolled in this course/i),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Enrol$/ })).toHaveCount(0);
+  });
+
+  test('prompts sign in when signed out, and returns to the same course', async ({
+    page,
+  }) => {
+    await page.goto(url(GRACE_HOST, `/catalogue/${UNHELD_FOR_VISITOR}`));
+
+    const link = page.getByRole('link', { name: /sign in to enrol/i });
+    await expect(link).toBeVisible();
+    expect(await link.getAttribute('href')).toBe(
+      `/sign-in?next=%2Fcatalogue%2F${UNHELD_FOR_VISITOR}`,
+    );
+
+    await link.click();
+    await page.locator('input[name=email]').fill(PEOPLE.student);
+    await page.locator('input[name=password]').fill(SEED_PASSWORD);
+    await page.getByRole('button', { name: /sign in/i }).click();
+
+    await page.waitForURL(`**/catalogue/${UNHELD_FOR_VISITOR}`, {
+      timeout: 15_000,
+    });
+    // Landed back on the course, now as somebody who may enrol in it.
+    await expect(page.getByRole('button', { name: /^Enrol$/ })).toBeVisible();
+  });
+
+  test('the shelf shows a held course and its program alongside it', async ({
+    page,
+  }) => {
+    // The seed's progress row for student1 sits on old-testament-survey's
+    // second lesson, deliberately not its first (see src/db/seed.ts), which
+    // exists to prove a gated lesson's position survives, not to change what
+    // the shelf offers. "Next" is still the first lesson in teaching order
+    // that carries no completedAt, which is the untouched first lesson, so
+    // this reads Start rather than Continue: the label ternary itself is one
+    // line off a field the isolation harness already covers, and player.spec
+    // already drives real playback and position sync.
+    await signIn(page, PEOPLE.student);
+    await page.goto(url(GRACE_HOST, '/courses'));
+
+    // The course title also appears inside the program card below, once as
+    // its own summary and once in the program's per-course breakdown; only
+    // the shelf's own course row carries the "lessons" count and a Start
+    // link, which is what tells the three apart.
+    const row = page
+      .locator('li', { hasText: 'Old Testament Survey' })
+      .filter({ hasText: 'lessons' });
+    await expect(row).toBeVisible();
+    await expect(row.getByRole('link', { name: /^Start$/ })).toBeVisible();
+
+    // The diploma program this course belongs to gets its own summary too.
+    // Every one of its three courses also names the program on its own shelf
+    // row ("Via Diploma in Biblical Studies"), so the percent sign is what
+    // singles out the program's own card: no per-course row shows one.
+    const program = page
+      .locator('li', { hasText: 'Diploma in Biblical Studies' })
+      .filter({ hasText: '%' });
+    await expect(program).toBeVisible();
+    await expect(program).toContainText('0%');
+  });
+});
+
+test.describe('the unified course editor', () => {
+  test('adds lessons without leaving, reorders, publishes, and archives', async ({
+    page,
+  }) => {
+    await signIn(page, PEOPLE.admin);
+    await openCatalog(page);
+
+    const title = `Homiletics II ${Date.now()}`;
+    await page.locator('input[placeholder="Old Testament Survey"]').fill(title);
+    await page.getByRole('button', { name: /create course/i }).click();
+    await page.waitForURL('**/courses/**/edit');
+
+    // Three lessons, never leaving the editor for a "section" the way the
+    // old flow made you.
+    for (const name of ['Lesson One', 'Lesson Two', 'Lesson Three']) {
+      await page.getByRole('button', { name: /^Add lesson$/ }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.locator('input[name="title"]').fill(name);
+      await dialog.getByRole('button', { name: /^Add lesson$/ }).click();
+      // Otherwise the next iteration's trigger click can resolve to two
+      // "Add lesson" buttons at once: the real trigger and the previous
+      // dialog's submit button, still mid exit-animation in the DOM.
+      await expect(dialog).toBeHidden();
+      await expect(page.locator('main')).toContainText(name);
+    }
+
+    // Every fresh lesson starts a draft.
+    await expect(page.locator('li', { hasText: 'Lesson One' })).toContainText(
+      'draft',
+    );
+
+    // Reorder: Lesson Two moves up, ahead of Lesson One.
+    await page
+      .locator('li', { hasText: 'Lesson Two' })
+      .getByRole('button', { name: /move lesson two up/i })
+      .click();
+    await expect
+      .poll(async () => {
+        const rows = await page.locator('main li').allTextContents();
+        const two = rows.findIndex((row) => row.includes('Lesson Two'));
+        const one = rows.findIndex((row) => row.includes('Lesson One'));
+        return two >= 0 && one >= 0 && two < one;
+      })
+      .toBe(true);
+
+    // Publish, then unpublish, the same lesson.
+    const firstRow = page.locator('li', { hasText: 'Lesson One' });
+    await firstRow.getByRole('button', { name: /^Publish$/ }).click();
+    await expect(firstRow).toContainText('published');
+    await firstRow.getByRole('button', { name: /^Unpublish$/ }).click();
+    await expect(firstRow).toContainText('draft');
+
+    // Archive a lesson: it leaves the list entirely, not just its state.
+    await page
+      .locator('li', { hasText: 'Lesson Three' })
+      .getByRole('button', { name: /^Archive$/ })
+      .click();
+    const archiveLessonDialog = page.getByRole('dialog');
+    await archiveLessonDialog
+      .getByRole('button', { name: /^Archive$/ })
+      .click();
+    await expect(archiveLessonDialog).toBeHidden();
+    await expect(page.locator('main')).not.toContainText('Lesson Three');
+
+    // Archive the course itself. The one-way door, admin only.
+    await page.getByRole('button', { name: /^Archive this course$/ }).click();
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: /^Archive$/ })
+      .click();
+    await page.waitForURL('**/teach');
+
+    // Gone from the admin catalogue, same as the public one.
+    await openCatalog(page);
+    await expect(page.locator('main')).not.toContainText(title);
+  });
+
+  test('refuses a student, whatever they are enrolled in', async ({ page }) => {
+    // student1 holds this exact course through the diploma program, which is
+    // the case a role check alone would let through: real entitlement, real
+    // access to every lesson, and still no standing to edit it.
+    await signIn(page, PEOPLE.student);
+    const courseId = courseBySlug(GRACE, 'old-testament-survey').id;
+
+    const response = await page.goto(
+      url(GRACE_HOST, `/courses/${courseId}/edit`),
+    );
+    expect(response?.status()).toBe(404);
   });
 });

@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
-import { courses, enrollments, products } from '@/db/schema';
+import { hasActiveEntitlement } from '@/db/repositories/entitlements';
+import { courses, products } from '@/db/schema';
 import type { TenantScope } from '@/db/scope';
 import {
   decideCourseAuthoring,
@@ -39,6 +40,8 @@ export type Actor = {
 };
 
 export type Action =
+  /** Reach the teaching area at all. Not about any particular course. */
+  | 'teach:view'
   /** Bring a course into existence. Not about any particular course. */
   | 'course:create'
   /** Change a course's title, description, attachments, or its lessons. */
@@ -79,6 +82,18 @@ export async function can(
   resource: Resource = { kind: 'none' },
 ): Promise<Verdict> {
   switch (action) {
+    case 'teach:view':
+      // Staff, whichever kind. An instructor only sees their own assignments
+      // once inside, but reaching the area at all does not depend on having
+      // one yet: a newly assigned instructor with nothing to teach still gets
+      // the "not assigned to anything" page, not a 404.
+      return actor.role === 'admin' || actor.role === 'instructor'
+        ? {
+            allowed: true,
+            reason: actor.role === 'admin' ? 'tenant-admin' : 'instructor',
+          }
+        : NOT_A_MEMBER;
+
     case 'course:create':
       // Deciding the institute teaches a thing at all is the institute's call.
       // An instructor edits what they are given.
@@ -175,20 +190,17 @@ export async function can(
 
       // Already on it is not a failure, but it is not an enrolment either, and
       // the caller needs to tell the difference to render the right button.
-      const [existing] = await scope.tx
-        .select({ id: enrollments.id })
-        .from(enrollments)
-        .where(
-          and(
-            eq(enrollments.tenantId, scope.tenantId),
-            eq(enrollments.userId, actor.userId),
-            eq(enrollments.sourceKind, 'course'),
-            eq(enrollments.sourceId, resource.id),
-          ),
-        )
-        .limit(1);
+      // Through hasActiveEntitlement rather than a direct-course lookup, so a
+      // student covered by a program that contains this course reads as
+      // already entitled instead of being offered a second, redundant direct
+      // enrolment for a course they can already open.
+      const entitled = await hasActiveEntitlement(
+        scope,
+        actor.userId,
+        resource.id,
+      );
 
-      return existing
+      return entitled
         ? { allowed: false, reason: 'already-enrolled' }
         : { allowed: true, reason: 'published-course' };
     }

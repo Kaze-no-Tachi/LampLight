@@ -1,4 +1,6 @@
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { getAdminDb } from '@/db/admin';
 import { closeDb, getTenantDb } from '@/db/client';
 import {
   courseBySlug,
@@ -8,12 +10,14 @@ import {
   userByKey,
   type SeedTenant,
 } from '@/db/seed-data';
+import { courses } from '@/db/schema';
 import {
   decideCourseAuthoring,
   decideLessonAuthoring,
   decideModuleAuthoring,
   type AuthorGrant,
 } from '@/lib/access/authoring';
+import { can } from '@/lib/access/can';
 import { withScope } from '../helpers/scope';
 
 /**
@@ -49,8 +53,36 @@ async function decideCourse(
   });
 }
 
+afterEach(async () => {
+  // Back to what the seed says, for every other test in this file and every
+  // other file sharing the database.
+  await getAdminDb()
+    .update(courses)
+    .set({ archivedAt: null })
+    .where(eq(courses.id, courseBySlug(GRACE, ASSIGNED).id));
+});
+
 afterAll(async () => {
   await closeDb();
+});
+
+describe('an archived course', () => {
+  it('is refused to its own admin and its own assigned instructor', async () => {
+    // Round 2, chunk 3. Archiving is hidden from its own author too, not only
+    // from students, the same rule an archived lesson gets: an archived
+    // course is not something you keep editing, it is gone.
+    await getAdminDb()
+      .update(courses)
+      .set({ archivedAt: new Date() })
+      .where(eq(courses.id, courseBySlug(GRACE, ASSIGNED).id));
+
+    expect(await decideCourse(GRACE, 'admin', ASSIGNED)).toEqual({
+      allowed: false,
+    });
+    expect(await decideCourse(GRACE, 'instructor', ASSIGNED)).toEqual({
+      allowed: false,
+    });
+  });
 });
 
 describe('an instructor edits their own courses and no others', () => {
@@ -231,5 +263,42 @@ describe('the application layer refuses on its own', () => {
     );
 
     expect(decision.allowed).toBe(false);
+  });
+});
+
+/**
+ * can()'s teach:view (round 2, chunk 4), which replaced the inline
+ * `viewer.role === 'student'` comparison /teach used to have. Not about any
+ * particular course, unlike everything else in this file: an instructor with
+ * nothing assigned yet still reaches the area and sees the empty state,
+ * which is why this checks the role gate alone rather than any course.
+ */
+describe('teach:view', () => {
+  function actor(role: 'student' | 'instructor' | 'admin' | null) {
+    return { tenantId: GRACE.id, userId: userByKey(GRACE, 'admin').id, role };
+  }
+
+  it('allows an admin and an instructor', async () => {
+    const admin = await getTenantDb(GRACE.id).run((scope) =>
+      can(scope, actor('admin'), 'teach:view'),
+    );
+    expect(admin.allowed).toBe(true);
+
+    const instructor = await getTenantDb(GRACE.id).run((scope) =>
+      can(scope, actor('instructor'), 'teach:view'),
+    );
+    expect(instructor.allowed).toBe(true);
+  });
+
+  it('refuses a student and a visitor with no membership at all', async () => {
+    const student = await getTenantDb(GRACE.id).run((scope) =>
+      can(scope, actor('student'), 'teach:view'),
+    );
+    expect(student.allowed).toBe(false);
+
+    const noMembership = await getTenantDb(GRACE.id).run((scope) =>
+      can(scope, actor(null), 'teach:view'),
+    );
+    expect(noMembership.allowed).toBe(false);
   });
 });

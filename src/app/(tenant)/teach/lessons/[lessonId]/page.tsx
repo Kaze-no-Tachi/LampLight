@@ -29,6 +29,9 @@ export default async function EditLessonPage({
   const { lessonId } = await params;
 
   const data = await getTenantDb(viewer.tenant.id).run(async (scope) => {
+    // findLessonWithCourse does not filter on publish state, so a draft is
+    // found here exactly as a published lesson is; decideCourseAuthoring
+    // below is what actually gates this page.
     const lesson = await findLessonWithCourse(scope, lessonId);
     if (!lesson) return null;
 
@@ -51,7 +54,7 @@ export default async function EditLessonPage({
     <main className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-10">
       <div className="flex flex-col gap-1">
         <Link
-          href={`/teach/courses/${data.lesson.courseId}`}
+          href={`/courses/${data.lesson.courseId}/edit`}
           className="text-muted-foreground text-sm hover:underline"
         >
           Back to {data.lesson.courseTitle}

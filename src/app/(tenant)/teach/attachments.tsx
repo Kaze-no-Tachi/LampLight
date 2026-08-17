@@ -1,7 +1,11 @@
 'use client';
 
 import { useRef, useState, useTransition } from 'react';
-import { formatBytes, checkUpload } from '@/lib/media/uploads';
+import {
+  checkUpload,
+  formatBytes,
+  uploadWithProgress,
+} from '@/lib/media/uploads';
 import {
   completeDocumentUploadAction,
   removeAttachmentAction,
@@ -100,7 +104,12 @@ export function Attachments({
     }
 
     try {
-      await put(ticket.uploadUrl, ticket.contentType, file, setProgress);
+      await uploadWithProgress(
+        ticket.uploadUrl,
+        ticket.contentType,
+        file,
+        setProgress,
+      );
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : 'The upload did not finish.',
@@ -245,39 +254,4 @@ export function Attachments({
       </div>
     </section>
   );
-}
-
-/**
- * Sends the file, reporting progress.
- *
- * The same reason as the audio uploader: fetch cannot report upload progress,
- * and a silent wait on a slow connection gets cancelled and retried.
- */
-function put(
-  url: string,
-  contentType: string,
-  file: File,
-  onProgress: (percent: number) => void,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const request = new XMLHttpRequest();
-    request.open('PUT', url);
-    request.setRequestHeader('content-type', contentType);
-
-    request.upload.addEventListener('progress', (event) => {
-      if (event.lengthComputable) {
-        onProgress(Math.round((event.loaded / event.total) * 100));
-      }
-    });
-
-    request.addEventListener('load', () => {
-      if (request.status >= 200 && request.status < 300) resolve();
-      else reject(new Error(`The bucket answered ${request.status}.`));
-    });
-    request.addEventListener('error', () =>
-      reject(new Error('The connection dropped during the upload.')),
-    );
-
-    request.send(file);
-  });
 }

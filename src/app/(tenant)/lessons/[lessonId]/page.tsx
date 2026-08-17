@@ -36,6 +36,10 @@ export default async function LessonPage({
   const lesson = await getTenantDb(tenant.id).run(async (scope) => {
     const decision = await decideLessonAccess(scope, ctx, lessonId);
     if (!decision.allowed) return null;
+    // The predicate already decided whether a draft was appropriate to grant
+    // (admin and instructor, not an ordinary entitlement or free preview);
+    // findLessonWithCourse itself does not filter on publish state, so this
+    // second lookup returns the same row regardless of which branch granted.
     return findLessonWithCourse(scope, lessonId);
   });
 
@@ -58,8 +62,10 @@ export default async function LessonPage({
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 p-8">
       <header className="flex flex-col gap-2">
+        {/* Back to the course rather than the shelf: this link also reaches a
+            free-preview listener with no shelf to go back to. */}
         <Link
-          href="/courses"
+          href={`/catalogue/${lesson.courseSlug}`}
           className="text-muted-foreground text-sm underline-offset-4 hover:underline"
         >
           {tenant.name}

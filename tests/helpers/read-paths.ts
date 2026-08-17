@@ -5,6 +5,7 @@ import {
   listPublishedPrograms,
 } from '@/db/repositories/catalog';
 import {
+  countCourseEnrollments,
   listAssignableStaff,
   listCoursesForAdmin,
   listProgramsForAdmin,
@@ -451,6 +452,22 @@ export const READ_PATHS: ReadPath[] = [
         rows.map((row) => row.userId),
         subjectUserIds,
       );
+    },
+  },
+  {
+    name: 'catalog-admin.countCourseEnrollments',
+    async run(scope, subject) {
+      // church-history carries a direct enrolment for student2 in every
+      // fixture (see src/db/seed-data.ts), which is what makes the positive
+      // case non-vacuous. The id passed in is already subject's own, the same
+      // shape hasActiveEntitlement's cross-tenant case relies on: this proves
+      // the count is non-empty under subject's own scope, not that the
+      // redundant tenant filter alone carries the weight (it and the
+      // globally unique source id agree, same caveat documented on
+      // listEnrolledCourses).
+      const course = courseBySlug(subject, 'church-history');
+      const count = await countCourseEnrollments(scope, course.id);
+      return ownedBySubject(count > 0 ? [course.id] : [], courseIds(subject));
     },
   },
   {

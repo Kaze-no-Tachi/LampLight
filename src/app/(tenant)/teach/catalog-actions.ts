@@ -5,6 +5,7 @@ import { getTenantDb } from '@/db/client';
 import { auditLog } from '@/db/schema';
 import { requireRole } from '@/lib/auth/guards';
 import {
+  archiveCourse,
   assignInstructor,
   createCourse,
   createProgram,
@@ -15,7 +16,11 @@ import {
 } from '@/lib/catalog/authoring';
 
 /**
- * Catalogue authoring, admin only.
+ * Catalogue authoring, admin only. Moved here from
+ * settings/catalog/actions.ts (round 2, chunk 5): deciding a course or
+ * program exists, who teaches it, and whether students can see it now lives
+ * on /teach alongside everything else staff does, rather than under a
+ * separate settings page nobody but an admin ever had reason to visit.
  *
  * Every one of these is a public endpoint that happens to be called from a
  * page, so the tenant comes from requireRole, which reads the resolved Host
@@ -26,9 +31,17 @@ import {
 export type CatalogResult =
   { status: 'ok'; message?: string } | { status: 'error'; message: string };
 
+export type CreateCourseResult =
+  { status: 'ok'; courseId: string } | { status: 'error'; message: string };
+
+/**
+ * Creates a course and returns its id rather than a message: the caller
+ * navigates straight to the editor, per the round 2 decision that creating a
+ * course lands there rather than back on this list.
+ */
 export async function createCourseAction(
   formData: FormData,
-): Promise<CatalogResult> {
+): Promise<CreateCourseResult> {
   const viewer = await requireRole('admin');
 
   const result = await getTenantDb(viewer.tenant.id).run(async (scope) => {
@@ -53,9 +66,45 @@ export async function createCourseAction(
 
   if (result.status === 'error') return result;
 
-  revalidatePath('/settings/catalog');
   revalidatePath('/teach');
-  return { status: 'ok', message: 'Course created. It is not published yet.' };
+  return { status: 'ok', courseId: result.id };
+}
+
+/**
+ * Retires a course. Admin only, narrower than course:edit, the same as
+ * publish: whether the course still exists is not an assigned instructor's
+ * call even though editing its content is.
+ */
+export async function archiveCourseAction(
+  formData: FormData,
+): Promise<CatalogResult> {
+  const viewer = await requireRole('admin');
+  const courseId = String(formData.get('courseId') ?? '');
+
+  const result = await getTenantDb(viewer.tenant.id).run(async (scope) => {
+    const done = await archiveCourse(scope, courseId);
+
+    if (done.status === 'ok') {
+      await scope.tx.insert(auditLog).values({
+        tenantId: scope.tenantId,
+        actorUserId: viewer.userId,
+        action: 'catalog.course_archived',
+        targetType: 'course',
+        targetId: courseId,
+      });
+    }
+
+    return done;
+  });
+
+  if (result.status === 'not_found') {
+    return { status: 'error', message: 'That course no longer exists.' };
+  }
+
+  revalidatePath('/teach');
+  revalidatePath('/courses', 'layout');
+  revalidatePath('/catalogue', 'layout');
+  return { status: 'ok', message: 'Archived.' };
 }
 
 export async function createProgramAction(
@@ -85,7 +134,7 @@ export async function createProgramAction(
 
   if (result.status === 'error') return result;
 
-  revalidatePath('/settings/catalog');
+  revalidatePath('/teach');
   return { status: 'ok', message: 'Program created. It is not published yet.' };
 }
 
@@ -118,8 +167,8 @@ export async function setPublishedAction(
     return { status: 'error', message: 'That course no longer exists.' };
   }
 
-  revalidatePath('/settings/catalog');
-  revalidatePath('/courses');
+  revalidatePath('/teach');
+  revalidatePath('/catalogue', 'layout');
   return {
     status: 'ok',
     message: publish ? 'Published.' : 'Withdrawn from the catalogue.',
@@ -153,8 +202,8 @@ export async function setProgramPublishedAction(
     return { status: 'error', message: 'That program no longer exists.' };
   }
 
-  revalidatePath('/settings/catalog');
-  revalidatePath('/courses');
+  revalidatePath('/teach');
+  revalidatePath('/catalogue', 'layout');
   return {
     status: 'ok',
     message: publish ? 'Published.' : 'Withdrawn from the catalogue.',
@@ -197,7 +246,6 @@ export async function assignInstructorAction(
     case 'already':
       return { status: 'ok', message: 'They were already assigned.' };
     default:
-      revalidatePath('/settings/catalog');
       revalidatePath('/teach');
       return { status: 'ok', message: 'Assigned.' };
   }
@@ -221,7 +269,6 @@ export async function removeInstructorAction(
     });
   });
 
-  revalidatePath('/settings/catalog');
   revalidatePath('/teach');
   return { status: 'ok', message: 'Removed.' };
 }
@@ -241,6 +288,6 @@ export async function setProgramCoursesAction(
     return { status: 'error', message: 'That program no longer exists.' };
   }
 
-  revalidatePath('/settings/catalog');
+  revalidatePath('/teach');
   return { status: 'ok', message: 'Saved.' };
 }

@@ -46,6 +46,8 @@ export type SeedLesson = {
   slug: string;
   title: string;
   isFreePreview: boolean;
+  /** Every seeded lesson is live: these are institutes already teaching. */
+  isPublished: boolean;
   sortOrder: number;
   durationSeconds: number;
   resourceId: string;
@@ -218,6 +220,7 @@ function buildCourses(tenantSlug: string): SeedCourse[] {
               // The first lesson of every course is open to everyone, which is
               // branch 2 of the access predicate.
               isFreePreview: ordinal === 1,
+              isPublished: true,
               sortOrder: lessonIndex,
               durationSeconds: 2400 + ordinal * 60,
               resourceId: seedUuid(`${lessonKey}/audio`),

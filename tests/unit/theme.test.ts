@@ -7,6 +7,7 @@ import {
   normalizeRadius,
   parseTheme,
   PRESETS,
+  resolveRsuiteTokens,
   resolveTokens,
   THEME_TOKENS,
   themeCss,
@@ -128,6 +129,49 @@ describe('the colours that are derived rather than typed', () => {
     expect(dark['muted-foreground']).not.toBe(
       PRESETS.classic['muted-foreground'],
     );
+  });
+});
+
+describe('the rsuite bridge (round 2 UI adoption)', () => {
+  it("makes the resolved brand color the primary scale's 500 stop", () => {
+    const tokens = resolveTokens(parseTheme({ brand: '#112233' }));
+    expect(resolveRsuiteTokens(tokens)['rs-primary-500']).toBe('#112233');
+  });
+
+  it('gives two different institutes two different scales', () => {
+    const classic = resolveRsuiteTokens(
+      resolveTokens(parseTheme({ preset: 'classic' })),
+    );
+    const evening = resolveRsuiteTokens(
+      resolveTokens(parseTheme({ preset: 'evening' })),
+    );
+
+    // Otherwise every rsuite Button on every institute's site is the same
+    // color regardless of what that institute picked, the exact failure
+    // mode this bridge exists to avoid.
+    expect(classic['rs-primary-500']).not.toBe(evening['rs-primary-500']);
+    expect(classic['rs-gray-0']).not.toBe(evening['rs-gray-0']);
+  });
+
+  it("runs gray from this institute's own background toward its own foreground", () => {
+    // The evening preset is dark on light text; a gray scale built by
+    // tinting toward white and shading toward black, the way the primary
+    // scale is, would put a light surface under dark text on the one preset
+    // meant to be read at night.
+    const evening = resolveRsuiteTokens(
+      resolveTokens(parseTheme({ preset: 'evening' })),
+    );
+    expect(evening['rs-gray-0']).toBe(PRESETS.evening.background);
+  });
+
+  it("marks only its own properties important, not the app's tokens", () => {
+    const css = themeCss(parseTheme({ preset: 'classic' }));
+
+    expect(css).toMatch(/--rs-primary-500:#[0-9a-f]{6} !important/);
+
+    const appPrimary = css.match(/--primary:[^;]+/)?.[0];
+    expect(appPrimary).toBeDefined();
+    expect(appPrimary).not.toContain('!important');
   });
 });
 

@@ -1,4 +1,6 @@
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { eq, inArray } from 'drizzle-orm';
+import { getAdminDb } from '@/db/admin';
 import { closeDb, getTenantDb } from '@/db/client';
 import {
   courseBySlug,
@@ -9,6 +11,7 @@ import {
   type SeedCourse,
   type SeedTenant,
 } from '@/db/seed-data';
+import { lessons } from '@/db/schema';
 import { decideLessonAccess, type AccessGrant } from '@/lib/access/predicate';
 
 /**
@@ -51,6 +54,43 @@ async function decide(
       : { allowed: false };
   });
 }
+
+/** Lesson ids toggled by a test in this file, so afterEach knows what to undo. */
+const touchedLessons = new Set<string>();
+
+async function setLessonPublished(
+  lessonId: string,
+  isPublished: boolean,
+): Promise<void> {
+  touchedLessons.add(lessonId);
+  await getAdminDb()
+    .update(lessons)
+    .set({ isPublished })
+    .where(eq(lessons.id, lessonId));
+}
+
+async function setLessonArchived(
+  lessonId: string,
+  archivedAt: Date | null,
+): Promise<void> {
+  touchedLessons.add(lessonId);
+  await getAdminDb()
+    .update(lessons)
+    .set({ archivedAt })
+    .where(eq(lessons.id, lessonId));
+}
+
+afterEach(async () => {
+  if (touchedLessons.size === 0) return;
+  // Every seeded lesson is published and unarchived (src/db/seed-data.ts), so
+  // putting both back is what makes the fixture match the seed again for
+  // whichever test runs next.
+  await getAdminDb()
+    .update(lessons)
+    .set({ isPublished: true, archivedAt: null })
+    .where(inArray(lessons.id, [...touchedLessons]));
+  touchedLessons.clear();
+});
 
 afterAll(async () => {
   await closeDb();
@@ -245,5 +285,78 @@ describe('the sharpest case in the fixture', () => {
       gatedLessonIn(CORNERSTONE, 'hermeneutics'),
     );
     expect(crossing.allowed).toBe(false);
+  });
+});
+
+/**
+ * Round 2, chunk 3: publication is distinct from every branch above.
+ * `is_published` was added in chunk 1 and read by nothing until now, so
+ * every seeded lesson defaults to published and none of the branches above
+ * moved. This is the first thing to actually flip it.
+ */
+describe('a draft lesson', () => {
+  it('refuses an ordinary entitled student', async () => {
+    const lessonId = gatedLessonIn(GRACE, 'church-history');
+    await setLessonPublished(lessonId, false);
+
+    const decision = await decide(
+      GRACE,
+      userByKey(GRACE, 'student2').id,
+      lessonId,
+    );
+    expect(decision.allowed).toBe(false);
+  });
+
+  it('refuses a free-preview visitor with no session', async () => {
+    // Free preview answers "may a stranger listen", not "is this finished".
+    // A lesson still being written is not an invitation to the public just
+    // because it is also marked open to everyone.
+    const lessonId = previewLessonIn(GRACE, 'church-history');
+    await setLessonPublished(lessonId, false);
+
+    const decision = await decide(GRACE, null, lessonId);
+    expect(decision.allowed).toBe(false);
+  });
+
+  it('still allows the institute admin, managing their own draft', async () => {
+    const lessonId = gatedLessonIn(GRACE, 'pastoral-ministry');
+    await setLessonPublished(lessonId, false);
+
+    const decision = await decide(
+      GRACE,
+      userByKey(GRACE, 'admin').id,
+      lessonId,
+    );
+    expect(decision).toEqual({ allowed: true, reason: 'tenant-admin' });
+  });
+
+  it('still allows the assigned instructor', async () => {
+    const lessonId = gatedLessonIn(GRACE, 'old-testament-survey');
+    await setLessonPublished(lessonId, false);
+
+    const decision = await decide(
+      GRACE,
+      userByKey(GRACE, 'instructor').id,
+      lessonId,
+    );
+    expect(decision).toEqual({ allowed: true, reason: 'course-instructor' });
+  });
+});
+
+describe('an archived lesson', () => {
+  it('is refused to everyone, admin included', async () => {
+    // The same rule an archived course gets: hidden from its own author too,
+    // not only from students. findLessonWithCourse excludes it with no
+    // option to include it, unlike a draft, which the editor can still ask
+    // for.
+    const lessonId = gatedLessonIn(GRACE, 'pastoral-ministry');
+    await setLessonArchived(lessonId, new Date());
+
+    const decision = await decide(
+      GRACE,
+      userByKey(GRACE, 'admin').id,
+      lessonId,
+    );
+    expect(decision.allowed).toBe(false);
   });
 });
