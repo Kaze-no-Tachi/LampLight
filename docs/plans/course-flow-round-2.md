@@ -91,9 +91,22 @@ first and then a `decide*` predicate. The one inline comparison is
       needs its own thought about progressive disclosure, since the editor
       page is tested to never mention "section" at all for the common
       one-section case. Commit `eb15a68`.
-- [ ] **Chunk 5, cleanup**: delete `/settings/catalog` and
-      `/teach/courses/[courseId]`, rename the nav `Signup` link, collapse the
-      duplicate uploader and badge.
+- [x] **Chunk 5, cleanup.** Deleted `/settings/catalog` and
+      `/teach/courses/[courseId]`. Course and program lifecycle (create,
+      publish/withdraw, instructor assign/remove, program-course linking)
+      moved from `settings/catalog` into `teach/catalog-actions.ts` and now
+      renders inline on `/teach`: admin sees a "Create course" form, a
+      Publish/Withdraw toggle and instructor controls on each course card,
+      and a new Programs section below the course list. The plan text did
+      not say where program management and instructor assignment should
+      land once `/settings/catalog` was gone; folding them into `/teach`
+      rather than dropping them was a decision made with the user, not an
+      oversight found later. Collapsed the duplicate XHR uploader
+      (`lesson-row.tsx`, `attachments.tsx`) into `uploadWithProgress` in
+      `lib/media/uploads.ts`, and the duplicate free-preview badge markup
+      into `FreePreviewBadge` exported from `lesson-list.tsx`. Nav:
+      `Catalogue` points at `/catalogue`, the admin `Signup` link now reads
+      `Signup settings`. Commit `9b192cc`.
 
 ## Work
 

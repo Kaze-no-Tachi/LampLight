@@ -67,12 +67,10 @@ waits for `migrate` to exit successfully. The box exposes nothing but SSH, and
 
 ## Outstanding
 
-- `docs/plans/course-flow-round-2.md` is the live piece of work, with progress
-  marked. Chunks 1 through 4 are done; chunk 5 (cleanup: delete
-  `/settings/catalog` and `/teach/courses/[courseId]`, rename the nav
-  `Signup` link, collapse the duplicate uploader and badge) is next and last.
-  Nothing links to either page anymore, so deleting them should be
-  straightforward, but grep first rather than trusting that.
+- `docs/plans/course-flow-round-2.md` is done: all five chunks complete,
+  including chunk 5's cleanup (`settings/catalog` and
+  `teach/courses/[courseId]` deleted, catalogue administration folded into
+  `/teach`).
 - Adding a second section to a course has no UI right now. `/teach` used to
   have an inline "Add module" form; retiring that page in chunk 4 removed it
   along with everything else /teach no longer renders, and the replacement
@@ -83,15 +81,16 @@ waits for `migrate` to exit successfully. The box exposes nothing but SSH, and
   deliberately silent about sections for the common one-section course, so
   the control needs progressive disclosure, not a form that is just always
   there.
-- UI library decision, not yet started: the user wants screens rebuilt on
-  React Suite (rsuite), modals included. Nothing uses it yet; every screen so
-  far is plain Tailwind plus native elements (`<dialog>` for
-  `AddLessonDialog`, `window.confirm` for the two archive buttons). This is a
-  cross-cutting adoption across the whole app, not scoped to any one round-2
-  chunk, so it needs its own plan before it starts: which components rsuite
-  replaces first, whether Tailwind and rsuite's own styling coexist or one
-  wins, and whether native `<dialog>`/`confirm` get swapped for rsuite's
-  `Modal` as part of the same pass.
+- UI library decision, next up: the user wants screens rebuilt on React Suite
+  (rsuite), modals included. Nothing uses it yet; every screen so far is
+  plain Tailwind plus native elements (`<dialog>` for `AddLessonDialog`,
+  `window.confirm` for the two archive buttons). This is a cross-cutting
+  adoption across the whole app, not scoped to any one round-2 chunk, so per
+  the user's own instruction it gets a written plan first, checked with them
+  before any rsuite code lands: which components rsuite replaces first,
+  whether Tailwind and rsuite's own styling coexist or one wins, and whether
+  native `<dialog>`/`confirm` get swapped for rsuite's `Modal` as part of the
+  same pass.
 - Roll the Cloudflare API token and the Brevo API key, both exposed in an
   earlier session transcript.
 - R2 bucket wants recreating in ENAM: it was made in APAC and location is fixed
