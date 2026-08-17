@@ -28,7 +28,10 @@
 #   cloudflared tunnel login
 #   cloudflared tunnel create lamplight-production
 #     -> writes <TUNNEL-UUID>.json
-#   install it at /srv/lamplight/cloudflared/tunnel.json, chmod 600
+#   install it at /srv/lamplight/cloudflared/tunnel.json, mode 600, OWNED BY
+#     65532 (the non-root user this image runs as). Installing it as root
+#     leaves the container unable to read its own credential: the log repeats
+#     "permission denied" and the site answers Cloudflare error 1033.
 #   replace the tunnel id below with the UUID
 #
 # Then point Cloudflare for SaaS at it:

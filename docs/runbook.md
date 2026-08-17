@@ -144,8 +144,20 @@ through the tunnel, not after.
 ```bash
 cloudflared tunnel login
 cloudflared tunnel create lamplight-production      # prints a UUID
-install -m 600 ~/.cloudflared/<UUID>.json /srv/lamplight/cloudflared/tunnel.json
+
+# 65532 is the non-root user the cloudflared image runs as. Confirm with
+#   docker inspect cloudflare/cloudflared:latest --format '{{.Config.User}}'
+install -D -m 600 -o 65532 -g 65532 \
+  ~/.cloudflared/<UUID>.json /srv/lamplight/cloudflared/tunnel.json
 ```
+
+**The owner matters as much as the mode, and getting it wrong fails in a
+confusing place.** This file used to be installed as root, mode 600, which
+looks careful and leaves the container unable to read its own credential. The
+container log then repeats `permission denied` while the site answers
+Cloudflare error 1033, which reads like a tunnel that was never created rather
+than a file the tunnel cannot open. Keep 600 and change the owner: the answer
+is not `chmod 644`, since this credential grants control of the tunnel.
 
 Put the UUID into `docker/cloudflared/config.yml` in place of
 `REPLACE_WITH_TUNNEL_UUID`.
@@ -545,6 +557,22 @@ same check on every build.
 **Cloudflare 1016 on a tenant domain.** Almost always the fallback origin. Check
 that the `origin.<apex>` CNAME is proxied, not DNS-only, and that the custom
 hostname shows both `status` and `ssl.status` as active.
+
+**Cloudflare 1033 on every hostname, including the apex.** DNS is pointing at a
+tunnel that has nothing connected to it. The application being healthy tells
+you nothing here, because it is cloudflared that is missing, so go straight to
+its log:
+
+```bash
+docker compose -f docker-compose.prod.yml logs --tail 40 cloudflared
+```
+
+In order of likelihood: the container was never started, because
+`up -d --wait app` brings up only the app and its dependencies and cloudflared
+depends on the app rather than the reverse; the credentials file is owned by
+root and the container runs as 65532, so the log repeats `permission denied`
+(see section 1.3); or the deployed `config.yml` still says
+`REPLACE_WITH_TUNNEL_UUID` because the clone predates the commit that set it.
 
 **Tenant domain resolves to the wrong institute, or 404s.** Tenant resolution
 reads the `Host` header. Confirm it survives the tunnel:
