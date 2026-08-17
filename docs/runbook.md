@@ -158,11 +158,28 @@ CLOUDFLARE_SAAS_FALLBACK_ORIGIN=origin.<apex> \
 pnpm cf:setup --target <UUID>.cfargotunnel.com
 ```
 
-That creates the proxied `origin.<apex>` record and sets the zone's fallback
-origin to it. It is idempotent, so re-run it to move the origin later, and
-`--dry-run` prints what it would change without changing anything. The token
-needs Zone → SSL and Certificates → Edit, Zone → DNS → Edit, and Zone →
-Zone → Read, on this zone only.
+With a real `--target` that ensures four things:
+
+| What                 | Record                                                  | Why                                                    |
+| -------------------- | ------------------------------------------------------- | ------------------------------------------------------ |
+| Fallback origin      | `origin.<apex>` CNAME to the tunnel, proxied            | Where Cloudflare sends every institute's custom domain |
+| Zone setting         | Custom Hostnames fallback origin set to `origin.<apex>` | Custom hostnames do not resolve without it             |
+| Platform apex        | `<apex>` CNAME to the tunnel, proxied                   | The platform home page                                 |
+| Institute subdomains | `*.<apex>` CNAME to the tunnel, proxied                 | `grace.<apex>` and every institute after it            |
+
+The last two used to be missing, from the script and from this page, which
+produced a deployment that worked for institutes who had brought their own
+domain and for nobody else. The wildcard is what makes onboarding an institute
+a database write rather than a DNS change.
+
+Run it with `--dry-run` first and read the plan. It only ever touches address
+records, so MX, TXT, and anything else sharing a name are left alone, and it
+refuses rather than guessing if a name already has more than one address
+record. Pass `--skip-platform-dns` if the apex is managed somewhere else.
+
+It is idempotent, so re-run it to move the origin later. The token needs
+Zone → SSL and Certificates → Edit, Zone → DNS → Edit, and Zone → Zone → Read,
+on this zone only.
 
 Omit `--target` and it uses `192.0.2.1`, which is reserved for documentation
 and routes nowhere. That is the right placeholder before a tunnel exists: the

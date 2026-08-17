@@ -15,7 +15,7 @@ import { config as loadEnv } from 'dotenv';
  *
  * WHAT IT DOES
  *
- *   pnpm cf:setup [--target <hostname-or-ip>] [--dry-run]
+ *   pnpm cf:setup [--target <hostname-or-ip>] [--dry-run] [--skip-platform-dns]
  *
  * Idempotent, and says so: it reports what is already correct rather than
  * rewriting it. Re-running after pointing --target at a real tunnel is the
@@ -28,6 +28,23 @@ import { config as loadEnv } from 'dotenv';
  * orange-clouded before Cloudflare will accept it as a fallback origin, and a
  * placeholder that obviously points at nothing is better than one that looks
  * like it might be a real server.
+ *
+ * IT ALSO POINTS THE PLATFORM'S OWN HOSTNAMES AT THE TUNNEL
+ *
+ * The fallback origin alone carries custom domains and nothing else. The apex
+ * and every institute subdomain need records of their own, and this script
+ * used to leave them out, which is a deployment that resolves for institutes
+ * who brought their own domain and for nobody else: grace.<apex> would simply
+ * not exist. So a real --target also ensures:
+ *
+ *   <apex>    CNAME -> target, proxied     the platform home
+ *   *.<apex>  CNAME -> target, proxied     every institute subdomain
+ *
+ * The wildcard is what makes onboarding an institute a database write rather
+ * than a DNS change. Skipped when the target is the placeholder, because
+ * pointing a live apex at an address that routes nowhere is worse than leaving
+ * it alone, and skippable entirely with --skip-platform-dns for a deployment
+ * whose apex DNS is managed somewhere else.
  */
 
 loadEnv();
@@ -36,6 +53,17 @@ const API = 'https://api.cloudflare.com/client/v4';
 
 /** Documentation range (RFC 5737). Reachable from nowhere, by design. */
 const PLACEHOLDER_TARGET = '192.0.2.1';
+
+/**
+ * Record types that answer "where does this hostname point".
+ *
+ * Filtering by these matters more than it looks. Cloudflare's list endpoint
+ * filters by name, and an apex typically carries MX and TXT records alongside
+ * its address record. Taking the first row back would have found an MX record
+ * for the mail forwarder and tried to rewrite it into a CNAME to the tunnel,
+ * which is how you take down a domain's email while setting up its website.
+ */
+const ADDRESS_TYPES = new Set(['A', 'AAAA', 'CNAME']);
 
 type Json = Record<string, unknown>;
 
@@ -74,6 +102,7 @@ function assertSuccess(response: { status: number; json: Json }, what: string) {
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
+  const skipPlatformDns = args.includes('--skip-platform-dns');
   const targetIndex = args.indexOf('--target');
   const target =
     targetIndex >= 0 ? (args[targetIndex + 1] ?? '') : PLACEHOLDER_TARGET;
@@ -97,8 +126,44 @@ async function main(): Promise<void> {
     );
   }
 
-  await ensureRecord({ token, zoneId, fallbackOrigin, target, dryRun });
+  await ensureRecord({
+    token,
+    zoneId,
+    name: fallbackOrigin,
+    label: 'fallback origin',
+    comment: 'Lamplight custom hostname fallback origin',
+    target,
+    dryRun,
+  });
   await ensureFallbackOrigin({ token, zoneId, fallbackOrigin, dryRun });
+
+  if (skipPlatformDns) {
+    console.log('platform dns: skipped by --skip-platform-dns');
+  } else if (target === PLACEHOLDER_TARGET) {
+    console.log(
+      'platform dns: skipped while the target is the placeholder. Re-run ' +
+        'with --target <uuid>.cfargotunnel.com once the tunnel exists.',
+    );
+  } else {
+    await ensureRecord({
+      token,
+      zoneId,
+      name: zoneName,
+      label: 'apex',
+      comment: 'Lamplight platform apex',
+      target,
+      dryRun,
+    });
+    await ensureRecord({
+      token,
+      zoneId,
+      name: `*.${zoneName}`,
+      label: 'wildcard',
+      comment: 'Lamplight institute subdomains',
+      target,
+      dryRun,
+    });
+  }
 
   console.log(
     '\nCustom hostnames are ready. Institutes can add domains, and each one ' +
@@ -106,15 +171,17 @@ async function main(): Promise<void> {
   );
 }
 
-/** The proxied record the fallback origin points at. */
+/** One proxied record pointing a name at the origin. */
 async function ensureRecord(params: {
   token: string;
   zoneId: string;
-  fallbackOrigin: string;
+  name: string;
+  label: string;
+  comment: string;
   target: string;
   dryRun: boolean;
 }): Promise<void> {
-  const { token, zoneId, fallbackOrigin, target, dryRun } = params;
+  const { token, zoneId, name, label, comment, target, dryRun } = params;
 
   // An IP is an A record and a hostname is a CNAME. A tunnel is the latter
   // (<id>.cfargotunnel.com), which is the shape this ends up in for real.
@@ -122,29 +189,42 @@ async function ensureRecord(params: {
 
   const existing = await call(
     'GET',
-    `/zones/${zoneId}/dns_records?name=${encodeURIComponent(fallbackOrigin)}`,
+    `/zones/${zoneId}/dns_records?name=${encodeURIComponent(name)}`,
     token,
   );
   assertSuccess(existing, 'Could not list DNS records');
 
-  const rows = (existing.json.result ?? []) as Json[];
+  // Only the records that answer where this name points. MX and TXT records
+  // sharing the name are somebody else's business and must survive untouched.
+  const rows = ((existing.json.result ?? []) as Json[]).filter((row) =>
+    ADDRESS_TYPES.has(String(row.type)),
+  );
+
+  if (rows.length > 1) {
+    throw new Error(
+      `${label}: ${name} has ${rows.length} address records ` +
+        `(${rows.map((row) => `${String(row.type)} ${String(row.content)}`).join(', ')}). ` +
+        'Refusing to guess which one is the origin. Remove the extras first.',
+    );
+  }
+
   const current = rows[0];
 
   if (!current) {
-    console.log(`record: creating ${type} ${fallbackOrigin} -> ${target}`);
+    console.log(`${label}: creating ${type} ${name} -> ${target}`);
     if (dryRun) return;
 
     const created = await call('POST', `/zones/${zoneId}/dns_records`, token, {
       type,
-      name: fallbackOrigin,
+      name,
       content: target,
       // Orange cloud. A grey-clouded record cannot be a fallback origin,
       // because Cloudflare has nothing to terminate TLS on.
       proxied: true,
-      comment: 'Lamplight custom hostname fallback origin',
+      comment,
     });
     assertSuccess(created, 'Could not create the record');
-    console.log('record: created');
+    console.log(`${label}: created`);
     return;
   }
 
@@ -154,14 +234,12 @@ async function ensureRecord(params: {
     current.proxied === true;
 
   if (matches) {
-    console.log(
-      `record: already ${type} ${fallbackOrigin} -> ${target}, proxied`,
-    );
+    console.log(`${label}: already ${type} ${name} -> ${target}, proxied`);
     return;
   }
 
   console.log(
-    `record: updating ${String(current.type)} ${String(current.content)} ` +
+    `${label}: updating ${String(current.type)} ${String(current.content)} ` +
       `(proxied ${String(current.proxied)}) -> ${type} ${target} (proxied true)`,
   );
   if (dryRun) return;
@@ -170,10 +248,10 @@ async function ensureRecord(params: {
     'PATCH',
     `/zones/${zoneId}/dns_records/${String(current.id)}`,
     token,
-    { type, name: fallbackOrigin, content: target, proxied: true },
+    { type, name, content: target, proxied: true },
   );
   assertSuccess(updated, 'Could not update the record');
-  console.log('record: updated');
+  console.log(`${label}: updated`);
 }
 
 /** The zone setting that tells Cloudflare where custom hostnames resolve. */
