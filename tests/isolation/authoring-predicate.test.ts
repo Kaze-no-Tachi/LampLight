@@ -1,4 +1,6 @@
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it } from 'vitest';
+import { eq } from 'drizzle-orm';
+import { getAdminDb } from '@/db/admin';
 import { closeDb, getTenantDb } from '@/db/client';
 import {
   courseBySlug,
@@ -8,6 +10,7 @@ import {
   userByKey,
   type SeedTenant,
 } from '@/db/seed-data';
+import { courses } from '@/db/schema';
 import {
   decideCourseAuthoring,
   decideLessonAuthoring,
@@ -49,8 +52,36 @@ async function decideCourse(
   });
 }
 
+afterEach(async () => {
+  // Back to what the seed says, for every other test in this file and every
+  // other file sharing the database.
+  await getAdminDb()
+    .update(courses)
+    .set({ archivedAt: null })
+    .where(eq(courses.id, courseBySlug(GRACE, ASSIGNED).id));
+});
+
 afterAll(async () => {
   await closeDb();
+});
+
+describe('an archived course', () => {
+  it('is refused to its own admin and its own assigned instructor', async () => {
+    // Round 2, chunk 3. Archiving is hidden from its own author too, not only
+    // from students, the same rule an archived lesson gets: an archived
+    // course is not something you keep editing, it is gone.
+    await getAdminDb()
+      .update(courses)
+      .set({ archivedAt: new Date() })
+      .where(eq(courses.id, courseBySlug(GRACE, ASSIGNED).id));
+
+    expect(await decideCourse(GRACE, 'admin', ASSIGNED)).toEqual({
+      allowed: false,
+    });
+    expect(await decideCourse(GRACE, 'instructor', ASSIGNED)).toEqual({
+      allowed: false,
+    });
+  });
 });
 
 describe('an instructor edits their own courses and no others', () => {

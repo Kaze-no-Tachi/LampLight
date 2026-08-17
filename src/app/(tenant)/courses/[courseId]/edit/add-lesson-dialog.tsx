@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useTransition } from 'react';
-import { addLessonToCourseAction } from '../../actions';
+import { addLessonToCourseAction } from '../../../teach/actions';
 
 /**
  * Adding a lesson, from the course you are already looking at.

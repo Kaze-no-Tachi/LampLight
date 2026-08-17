@@ -3,6 +3,7 @@
 import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { getTenantDb } from '@/db/client';
+import { findLessonWithCourse } from '@/db/repositories/lessons';
 import {
   auditLog,
   courseResources,
@@ -11,11 +12,18 @@ import {
   lessons,
   modules,
 } from '@/db/schema';
+import type { TenantScope } from '@/db/scope';
 import {
   decideCourseAuthoring,
   decideLessonAuthoring,
   decideModuleAuthoring,
 } from '@/lib/access/authoring';
+import {
+  archiveLesson,
+  reorderLesson,
+  setLessonPublished,
+  type ReorderDirection,
+} from '@/lib/catalog/authoring';
 import { requireViewer } from '@/lib/auth/guards';
 import {
   confirmAttachment,
@@ -87,6 +95,7 @@ export async function updateCourseAction(
 
   revalidatePath('/teach');
   revalidatePath(`/teach/courses/${courseId}`);
+  revalidatePath(`/courses/${courseId}/edit`);
   // The catalog and the course page both read this.
   revalidatePath('/catalogue', 'layout');
   return { status: 'ok' };
@@ -142,6 +151,125 @@ export async function updateLessonAction(
   revalidatePath('/teach');
   revalidatePath(`/teach/lessons/${lessonId}`);
   revalidatePath(`/lessons/${lessonId}`);
+  return { status: 'ok' };
+}
+
+/**
+ * The three lesson-lifecycle actions the unified editor's LessonList calls
+ * (round 2, chunk 3). Each re-establishes the viewer, resolves the lesson to
+ * its course, and asks the same authoring predicate updateLessonAction does:
+ * an assigned instructor may publish, archive and reorder their own course's
+ * lessons, not only edit them.
+ *
+ * findLessonWithCourse does not filter on publish state, which is exactly
+ * right here: these actions are how a draft becomes not-a-draft, so a draft
+ * has to be found in order to be published. An archived lesson is still not
+ * found, matching every other page and predicate.
+ */
+async function findEditableLesson(
+  scope: TenantScope,
+  ctx: { tenantId: string; userId: string },
+  lessonId: string,
+) {
+  const lesson = await findLessonWithCourse(scope, lessonId);
+  if (!lesson) return null;
+
+  const decision = await decideCourseAuthoring(scope, ctx, lesson.courseId);
+  return decision.allowed ? lesson : null;
+}
+
+export async function setLessonPublishedAction(
+  formData: FormData,
+): Promise<EditResult> {
+  const viewer = await requireViewer();
+  const lessonId = String(formData.get('lessonId') ?? '');
+  const isPublished = String(formData.get('isPublished') ?? '') === 'true';
+  const ctx = { tenantId: viewer.tenant.id, userId: viewer.userId };
+
+  const courseId = await getTenantDb(viewer.tenant.id).run(async (scope) => {
+    const lesson = await findEditableLesson(scope, ctx, lessonId);
+    if (!lesson) return null;
+
+    await setLessonPublished(scope, lessonId, isPublished);
+
+    await scope.tx.insert(auditLog).values({
+      tenantId: scope.tenantId,
+      actorUserId: viewer.userId,
+      action: isPublished ? 'lesson.published' : 'lesson.unpublished',
+      targetType: 'lesson',
+      targetId: lessonId,
+    });
+
+    return lesson.courseId;
+  });
+
+  if (!courseId) return DENIED;
+
+  revalidatePath(`/courses/${courseId}/edit`);
+  revalidatePath('/catalogue', 'layout');
+  revalidatePath('/courses');
+  return { status: 'ok' };
+}
+
+export async function archiveLessonAction(
+  formData: FormData,
+): Promise<EditResult> {
+  const viewer = await requireViewer();
+  const lessonId = String(formData.get('lessonId') ?? '');
+  const ctx = { tenantId: viewer.tenant.id, userId: viewer.userId };
+
+  const courseId = await getTenantDb(viewer.tenant.id).run(async (scope) => {
+    const lesson = await findEditableLesson(scope, ctx, lessonId);
+    if (!lesson) return null;
+
+    await archiveLesson(scope, lessonId);
+
+    await scope.tx.insert(auditLog).values({
+      tenantId: scope.tenantId,
+      actorUserId: viewer.userId,
+      action: 'lesson.archived',
+      targetType: 'lesson',
+      targetId: lessonId,
+    });
+
+    return lesson.courseId;
+  });
+
+  if (!courseId) return DENIED;
+
+  revalidatePath(`/courses/${courseId}/edit`);
+  revalidatePath('/catalogue', 'layout');
+  revalidatePath('/courses');
+  return { status: 'ok' };
+}
+
+export async function reorderLessonAction(
+  formData: FormData,
+): Promise<EditResult> {
+  const viewer = await requireViewer();
+  const lessonId = String(formData.get('lessonId') ?? '');
+  const direction = String(formData.get('direction') ?? '') as ReorderDirection;
+  const ctx = { tenantId: viewer.tenant.id, userId: viewer.userId };
+
+  if (direction !== 'up' && direction !== 'down') {
+    return { status: 'error', message: 'That is not a direction.' };
+  }
+
+  const result = await getTenantDb(viewer.tenant.id).run(async (scope) => {
+    const lesson = await findEditableLesson(scope, ctx, lessonId);
+    if (!lesson) return null;
+
+    const outcome = await reorderLesson(scope, lessonId, direction);
+    return { outcome, courseId: lesson.courseId };
+  });
+
+  if (!result) return DENIED;
+  if (result.outcome.status === 'not_found') return DENIED;
+  // Already first or last. Not an error: the button at the edge should not
+  // read as broken, it has simply run out of neighbours to swap with.
+  if (result.outcome.status === 'edge') return { status: 'ok' };
+
+  revalidatePath(`/courses/${result.courseId}/edit`);
   return { status: 'ok' };
 }
 
@@ -231,6 +359,7 @@ export async function addCourseLinkAction(
   if (!done) return DENIED;
 
   revalidatePath(`/teach/courses/${courseId}`);
+  revalidatePath(`/courses/${courseId}/edit`);
   revalidatePath('/catalogue', 'layout');
   return { status: 'ok' };
 }
@@ -328,6 +457,7 @@ function readTarget(formData: FormData): AttachmentTarget | null {
 function revalidateFor(target: AttachmentTarget): void {
   if (target.kind === 'course') {
     revalidatePath(`/teach/courses/${target.id}`);
+    revalidatePath(`/courses/${target.id}/edit`);
     revalidatePath('/catalogue', 'layout');
     return;
   }

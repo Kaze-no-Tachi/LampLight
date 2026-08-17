@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import {
   assignInstructorAction,
@@ -54,16 +55,32 @@ function Report({ result }: { result: CatalogResult | null }) {
   );
 }
 
+/**
+ * Creating a course lands in its editor, not back on this list (round 2
+ * decision): there is nothing to do with a brand new, empty course from here
+ * anyway, and the editor is where lessons actually get added.
+ */
 export function NewCourseForm() {
-  const { pending, result, run } = useAction();
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   return (
     <form
       className="flex flex-col gap-3 rounded-lg border p-4"
       onSubmit={(event) => {
         event.preventDefault();
-        const form = event.currentTarget;
-        run(createCourseAction, new FormData(form), () => form.reset());
+        const data = new FormData(event.currentTarget);
+
+        startTransition(async () => {
+          const result = await createCourseAction(data);
+          if (result.status === 'error') {
+            setError(result.message);
+            return;
+          }
+          setError(null);
+          router.push(`/courses/${result.courseId}/edit`);
+        });
       }}
     >
       <h3 className="font-medium">Add a course</h3>
@@ -91,7 +108,7 @@ export function NewCourseForm() {
       >
         {pending ? 'Creating...' : 'Create course'}
       </button>
-      <Report result={result} />
+      {error && <p className="text-destructive text-sm">{error}</p>}
     </form>
   );
 }
@@ -173,7 +190,7 @@ export function CourseRow({
 
       <div className="flex flex-wrap items-center gap-2">
         <Link
-          href={`/teach/courses/${course.id}`}
+          href={`/courses/${course.id}/edit`}
           className="text-sm underline underline-offset-4"
         >
           Edit content

@@ -180,6 +180,7 @@ export async function addLessonToCourseAction(
   if (!done) return { status: 'error', message: 'That course is not yours.' };
 
   revalidatePath(`/teach/courses/${courseId}`);
+  revalidatePath(`/courses/${courseId}/edit`);
   revalidatePath('/teach');
   return { status: 'ok' };
 }

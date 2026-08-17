@@ -1,7 +1,8 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import {
   courseInstructors,
   courses,
+  enrollments,
   memberships,
   products,
   programCourses,
@@ -53,7 +54,12 @@ export async function listCoursesForAdmin(
         eq(products.id, courses.productId),
       ),
     )
-    .where(eq(courses.tenantId, scope.tenantId))
+    // Archived disappears from every list, this one included: an admin
+    // managing the catalogue should not keep tripping over a course they
+    // already retired, any more than a student would.
+    .where(
+      and(eq(courses.tenantId, scope.tenantId), isNull(courses.archivedAt)),
+    )
     .orderBy(asc(courses.title));
 
   if (rows.length === 0) return [];
@@ -155,4 +161,30 @@ export async function listAssignableStaff(scope: TenantScope): Promise<
     (row): row is (typeof rows)[number] & { role: 'instructor' | 'admin' } =>
       row.role !== 'student',
   );
+}
+
+/**
+ * How many people directly hold this course, for the archive confirmation.
+ *
+ * Direct enrolments only, not entitlement resolved through a program: an
+ * admin archiving a course is asking "who loses a row that names this course
+ * by id", and a program enrolment does not. Archiving a course inside a live
+ * program is a rarer, harder decision this count is not trying to answer.
+ */
+export async function countCourseEnrollments(
+  scope: TenantScope,
+  courseId: string,
+): Promise<number> {
+  const [row] = await scope.tx
+    .select({ count: sql<number>`count(*)` })
+    .from(enrollments)
+    .where(
+      and(
+        eq(enrollments.tenantId, scope.tenantId),
+        eq(enrollments.sourceKind, 'course'),
+        eq(enrollments.sourceId, courseId),
+      ),
+    );
+
+  return Number(row?.count ?? 0);
 }

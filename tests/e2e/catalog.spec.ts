@@ -6,6 +6,7 @@ import {
   url,
 } from '../helpers/browser';
 import { expect, test } from '../helpers/test';
+import { courseBySlug, GRACE } from '@/db/seed-data';
 
 /**
  * Building a catalogue, which is where a real institute starts.
@@ -39,8 +40,14 @@ test.describe('an admin building a catalogue', () => {
     await page.locator('input[placeholder="Old Testament Survey"]').fill(NAME);
     await page.locator(SLUG_HINT).first().fill('church-history-test');
     await page.getByRole('button', { name: /create course/i }).click();
-    await expect(page.getByText(/Course created/i)).toBeVisible();
 
+    // Lands in the editor, not back on this list (round 2 decision).
+    await page.waitForURL('**/courses/**/edit');
+    await expect(
+      page.getByRole('heading', { name: NAME, exact: true }),
+    ).toBeVisible();
+
+    await openCatalog(page);
     const row = page.locator('li', { hasText: NAME }).first();
     await expect(row).toContainText('not published');
     await expect(row).toContainText('0 lessons');
@@ -94,8 +101,9 @@ test.describe('an admin building a catalogue', () => {
     const title = `Homiletics ${Date.now()}`;
     await page.locator('input[placeholder="Old Testament Survey"]').fill(title);
     await page.getByRole('button', { name: /create course/i }).click();
-    await expect(page.getByText(/Course created/i)).toBeVisible();
+    await page.waitForURL('**/courses/**/edit');
 
+    await openCatalog(page);
     const row = page.locator('li', { hasText: title }).first();
     await expect(row).toContainText('Nobody yet');
 
@@ -252,14 +260,10 @@ test.describe('adding lessons', () => {
       .locator('input[placeholder="Old Testament Survey"]')
       .fill(course);
     await page.getByRole('button', { name: /create course/i }).click();
-    await expect(page.getByText(/Course created/i)).toBeVisible();
 
-    await page
-      .locator('li', { hasText: course })
-      .first()
-      .getByRole('link', { name: /edit content/i })
-      .click();
-    await page.waitForURL('**/teach/courses/**');
+    // Lands in the editor directly (round 2 decision), no second click to
+    // "edit content" needed.
+    await page.waitForURL('**/courses/**/edit');
 
     // The word does not appear on the screen at all.
     await expect(page.locator('main')).not.toContainText('section', {
@@ -277,8 +281,17 @@ test.describe('adding lessons', () => {
 
     await expect(page.locator('main')).toContainText(lesson);
 
-    // Publish it and check a visitor gets the free preview lesson, which is
-    // the whole chain: created, listed, visible.
+    // A new lesson is a draft (round 2, chunk 3), free preview or not: being
+    // open to everyone is a different question from being finished. Publish
+    // the lesson itself before the course, or a student would find nothing
+    // there regardless of what the course-level toggle says.
+    const lessonRow = page.locator('li', { hasText: lesson });
+    await expect(lessonRow).toContainText('draft');
+    await lessonRow.getByRole('button', { name: /^Publish$/ }).click();
+    await expect(lessonRow).toContainText('published');
+
+    // Publish the course and check a visitor gets the free preview lesson,
+    // which is the whole chain: created, listed, visible.
     await openCatalog(page);
     await page
       .locator('li', { hasText: course })
@@ -449,5 +462,87 @@ test.describe('the student shelf and self-enrolment', () => {
       .filter({ hasText: '%' });
     await expect(program).toBeVisible();
     await expect(program).toContainText('0%');
+  });
+});
+
+test.describe('the unified course editor', () => {
+  test('adds lessons without leaving, reorders, publishes, and archives', async ({
+    page,
+  }) => {
+    await signIn(page, PEOPLE.admin);
+    await openCatalog(page);
+
+    const title = `Homiletics II ${Date.now()}`;
+    await page.locator('input[placeholder="Old Testament Survey"]').fill(title);
+    await page.getByRole('button', { name: /create course/i }).click();
+    await page.waitForURL('**/courses/**/edit');
+
+    // Three lessons, never leaving the editor for a "section" the way the
+    // old flow made you.
+    for (const name of ['Lesson One', 'Lesson Two', 'Lesson Three']) {
+      await page.getByRole('button', { name: /^Add lesson$/ }).click();
+      await page.locator('dialog input[name="title"]').fill(name);
+      await page
+        .locator('dialog')
+        .getByRole('button', { name: /^Add lesson$/ })
+        .click();
+      await expect(page.locator('main')).toContainText(name);
+    }
+
+    // Every fresh lesson starts a draft.
+    await expect(page.locator('li', { hasText: 'Lesson One' })).toContainText(
+      'draft',
+    );
+
+    // Reorder: Lesson Two moves up, ahead of Lesson One.
+    await page
+      .locator('li', { hasText: 'Lesson Two' })
+      .getByRole('button', { name: /move lesson two up/i })
+      .click();
+    await expect
+      .poll(async () => {
+        const rows = await page.locator('main li').allTextContents();
+        const two = rows.findIndex((row) => row.includes('Lesson Two'));
+        const one = rows.findIndex((row) => row.includes('Lesson One'));
+        return two >= 0 && one >= 0 && two < one;
+      })
+      .toBe(true);
+
+    // Publish, then unpublish, the same lesson.
+    const firstRow = page.locator('li', { hasText: 'Lesson One' });
+    await firstRow.getByRole('button', { name: /^Publish$/ }).click();
+    await expect(firstRow).toContainText('published');
+    await firstRow.getByRole('button', { name: /^Unpublish$/ }).click();
+    await expect(firstRow).toContainText('draft');
+
+    // Archive a lesson: it leaves the list entirely, not just its state.
+    page.once('dialog', (dialog) => dialog.accept());
+    await page
+      .locator('li', { hasText: 'Lesson Three' })
+      .getByRole('button', { name: /^Archive$/ })
+      .click();
+    await expect(page.locator('main')).not.toContainText('Lesson Three');
+
+    // Archive the course itself. The one-way door, admin only.
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByRole('button', { name: /^Archive this course$/ }).click();
+    await page.waitForURL('**/teach');
+
+    // Gone from the admin catalogue, same as the public one.
+    await openCatalog(page);
+    await expect(page.locator('main')).not.toContainText(title);
+  });
+
+  test('refuses a student, whatever they are enrolled in', async ({ page }) => {
+    // student1 holds this exact course through the diploma program, which is
+    // the case a role check alone would let through: real entitlement, real
+    // access to every lesson, and still no standing to edit it.
+    await signIn(page, PEOPLE.student);
+    const courseId = courseBySlug(GRACE, 'old-testament-survey').id;
+
+    const response = await page.goto(
+      url(GRACE_HOST, `/courses/${courseId}/edit`),
+    );
+    expect(response?.status()).toBe(404);
   });
 });

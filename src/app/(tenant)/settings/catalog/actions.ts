@@ -5,6 +5,7 @@ import { getTenantDb } from '@/db/client';
 import { auditLog } from '@/db/schema';
 import { requireRole } from '@/lib/auth/guards';
 import {
+  archiveCourse,
   assignInstructor,
   createCourse,
   createProgram,
@@ -26,9 +27,17 @@ import {
 export type CatalogResult =
   { status: 'ok'; message?: string } | { status: 'error'; message: string };
 
+export type CreateCourseResult =
+  { status: 'ok'; courseId: string } | { status: 'error'; message: string };
+
+/**
+ * Creates a course and returns its id rather than a message: the caller
+ * navigates straight to the editor, per the round 2 decision that creating a
+ * course lands there rather than back on this list.
+ */
 export async function createCourseAction(
   formData: FormData,
-): Promise<CatalogResult> {
+): Promise<CreateCourseResult> {
   const viewer = await requireRole('admin');
 
   const result = await getTenantDb(viewer.tenant.id).run(async (scope) => {
@@ -55,7 +64,45 @@ export async function createCourseAction(
 
   revalidatePath('/settings/catalog');
   revalidatePath('/teach');
-  return { status: 'ok', message: 'Course created. It is not published yet.' };
+  return { status: 'ok', courseId: result.id };
+}
+
+/**
+ * Retires a course. Admin only, narrower than course:edit, the same as
+ * publish: whether the course still exists is not an assigned instructor's
+ * call even though editing its content is.
+ */
+export async function archiveCourseAction(
+  formData: FormData,
+): Promise<CatalogResult> {
+  const viewer = await requireRole('admin');
+  const courseId = String(formData.get('courseId') ?? '');
+
+  const result = await getTenantDb(viewer.tenant.id).run(async (scope) => {
+    const done = await archiveCourse(scope, courseId);
+
+    if (done.status === 'ok') {
+      await scope.tx.insert(auditLog).values({
+        tenantId: scope.tenantId,
+        actorUserId: viewer.userId,
+        action: 'catalog.course_archived',
+        targetType: 'course',
+        targetId: courseId,
+      });
+    }
+
+    return done;
+  });
+
+  if (result.status === 'not_found') {
+    return { status: 'error', message: 'That course no longer exists.' };
+  }
+
+  revalidatePath('/settings/catalog');
+  revalidatePath('/teach');
+  revalidatePath('/courses', 'layout');
+  revalidatePath('/catalogue', 'layout');
+  return { status: 'ok', message: 'Archived.' };
 }
 
 export async function createProgramAction(

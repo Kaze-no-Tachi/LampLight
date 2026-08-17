@@ -9,6 +9,7 @@ import { decideLessonAccess } from '@/lib/access/predicate';
 import { getSessionUser, getViewer } from '@/lib/auth/guards';
 import { Markdown } from '@/lib/markdown/render';
 import { requireTenant } from '@/lib/tenancy/context';
+import { LessonList } from '../../lesson-list';
 import { EnrollButton } from './enroll-button';
 
 /**
@@ -163,60 +164,7 @@ export default async function CoursePage({
         </section>
       )}
 
-      <ol className="flex flex-col gap-2">
-        {view.lessons.map((lesson, index) => (
-          <li
-            key={lesson.id}
-            className="flex items-center justify-between gap-4 rounded-lg border p-4"
-          >
-            <span className="flex items-baseline gap-3">
-              <span className="text-muted-foreground font-mono text-sm">
-                {String(index + 1).padStart(2, '0')}
-              </span>
-              {lesson.open ? (
-                // Open lessons are underlined rather than only being links.
-                // Without a visible affordance the two states render almost
-                // identically, and a student cannot tell what they may click
-                // from what they may not, which is the one thing this page
-                // exists to communicate.
-                <Link
-                  href={`/lessons/${lesson.id}`}
-                  className="decoration-muted-foreground/40 font-medium underline underline-offset-4 hover:decoration-current"
-                >
-                  {lesson.title}
-                </Link>
-              ) : (
-                // Locked lessons still show their title. The catalogue is
-                // public and the titles are how somebody decides whether to
-                // enrol; it is the audio that is gated, and that is gated at
-                // issuance.
-                <span className="text-muted-foreground">{lesson.title}</span>
-              )}
-            </span>
-
-            <span className="text-muted-foreground flex items-center gap-2 text-xs whitespace-nowrap">
-              {lesson.isFreePreview && (
-                <span className="rounded-full border px-2 py-0.5">
-                  Free preview
-                </span>
-              )}
-              {lesson.open ? (
-                formatDuration(lesson.durationSeconds)
-              ) : (
-                <span aria-label="Locked" title="Locked">
-                  Locked
-                </span>
-              )}
-            </span>
-          </li>
-        ))}
-      </ol>
+      <LessonList mode="student" lessons={view.lessons} />
     </main>
   );
-}
-
-function formatDuration(seconds: number | null): string {
-  if (!seconds) return '';
-  const minutes = Math.round(seconds / 60);
-  return `${minutes} min`;
 }

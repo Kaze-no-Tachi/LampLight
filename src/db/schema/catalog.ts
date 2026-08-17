@@ -96,7 +96,8 @@ export const courses = pgTable(
      * because a course owns lessons, uploaded recordings, enrolments and every
      * student's progress, and cascading all of that away on a misclick is not
      * a thing anybody recovers from. An archived course disappears from every
-     * list and frees nothing but attention; its slug stays taken.
+     * list and frees its slug: a new course may reuse it, per the round 2
+     * decision. See the partial index below.
      */
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
@@ -105,7 +106,12 @@ export const courses = pgTable(
   },
   (table) => [
     unique('courses_tenant_id_id_key').on(table.tenantId, table.id),
-    unique('courses_tenant_id_slug_key').on(table.tenantId, table.slug),
+    // No plain unique on (tenant_id, slug) here, unlike the id key above: an
+    // archived course must not hold its address against a new course that
+    // reuses it. The real constraint is a hand written partial unique index,
+    // courses_tenant_id_slug_active_key (migration 0009), over rows where
+    // archived_at is null, same reasoning and same shape as the domain claim
+    // index (see tenant_domains in src/db/schema/tenancy.ts).
     unique('courses_tenant_id_product_id_key').on(
       table.tenantId,
       table.productId,

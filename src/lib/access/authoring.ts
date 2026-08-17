@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { getTenantDb } from '@/db/client';
 import { findMembership, isInstructorOf } from '@/db/repositories/entitlements';
 import { courses, lessons, modules } from '@/db/schema';
@@ -46,13 +46,21 @@ export async function decideCourseAuthoring(
   ctx: AuthorContext,
   courseId: string,
 ): Promise<AuthorDecision> {
-  // The course has to exist in THIS institute. Checked first, so a course id
-  // from elsewhere is refused before any role is considered and the answer is
-  // identical to one that never existed.
+  // The course has to exist in THIS institute, and not be archived. Checked
+  // first, so a course id from elsewhere or a retired one is refused before
+  // any role is considered and the answer is identical to one that never
+  // existed: archived is hidden from its own author too, the same rule an
+  // archived lesson gets (round 2, chunk 3).
   const found = await scope.tx
     .select({ id: courses.id })
     .from(courses)
-    .where(and(eq(courses.tenantId, scope.tenantId), eq(courses.id, courseId)))
+    .where(
+      and(
+        eq(courses.tenantId, scope.tenantId),
+        eq(courses.id, courseId),
+        isNull(courses.archivedAt),
+      ),
+    )
     .limit(1);
   if (found.length === 0) return DENIED;
 

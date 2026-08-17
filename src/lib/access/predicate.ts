@@ -75,11 +75,17 @@ export async function decideLessonAccess(
   //    itself enforces this: the query is filtered and row-level security
   //    applies on top, so this is a check on the result rather than a check
   //    somebody could forget to write.
+  // findLessonWithCourse hard-excludes an archived lesson for every branch
+  // below, the same rule an archived course gets: gone for its own author too,
+  // not only for students (round 2, chunk 3).
   const lesson = await findLessonWithCourse(scope, lessonId);
   if (!lesson) return DENIED;
 
   // 2. Free preview, open to everyone including visitors with no session.
-  if (lesson.isFreePreview) {
+  //    Draft is not "finished" even when marked free preview: a lesson an
+  //    institute is still writing is not an invitation to the public, free
+  //    preview or not.
+  if (lesson.isFreePreview && lesson.isPublished) {
     return { allowed: true, reason: 'free-preview', courseId: lesson.courseId };
   }
 
@@ -88,16 +94,17 @@ export async function decideLessonAccess(
   const membership = await findMembership(scope, ctx.userId);
   if (!membership) return DENIED;
 
-  // 3. An institute's admins see everything of their institute's. Note that
+  // 3. An institute's admins see everything of their institute's, published or
+  //    not: managing a draft is exactly the point of being staff. Note that
   //    this is admin *here*: the membership was looked up in this tenant's
   //    scope, so an admin at another institute is nobody here.
   if (membership.role === 'admin') {
     return { allowed: true, reason: 'tenant-admin', courseId: lesson.courseId };
   }
 
-  // 4. Instructors see the courses they are assigned to, and only those. An
-  //    instructor is not a lesser admin: they have no standing on a course
-  //    somebody else teaches.
+  // 4. Instructors see the courses they are assigned to, and only those,
+  //    drafts included for the same reason as admin. An instructor is not a
+  //    lesser admin: they have no standing on a course somebody else teaches.
   if (
     membership.role === 'instructor' &&
     (await isInstructorOf(scope, ctx.userId, lesson.courseId))
@@ -112,7 +119,12 @@ export async function decideLessonAccess(
   // 5 and 6. A direct unexpired course enrollment, or an enrollment in any
   //    program that contains this course. Both shapes resolve in one query,
   //    and an expired enrollment reads exactly like no enrollment at all.
-  if (await hasActiveEntitlement(scope, ctx.userId, lesson.courseId)) {
+  //    Published is required here too: an ordinary student's entitlement
+  //    covers the course, not a lesson inside it that is still being written.
+  if (
+    lesson.isPublished &&
+    (await hasActiveEntitlement(scope, ctx.userId, lesson.courseId))
+  ) {
     return { allowed: true, reason: 'entitlement', courseId: lesson.courseId };
   }
 

@@ -64,6 +64,13 @@
       "when": 1786971235863,
       "tag": "0008_lesson_publish_and_archive",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786975757334,
+      "tag": "0009_lesson_and_course_lifecycle",
+      "breakpoints": true
     }
   ]
 }

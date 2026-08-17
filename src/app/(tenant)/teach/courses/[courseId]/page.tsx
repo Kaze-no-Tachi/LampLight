@@ -6,8 +6,12 @@ import { listCourseResources } from '@/db/repositories/catalog';
 import { courses, lessons, modules } from '@/db/schema';
 import { decideCourseAuthoring } from '@/lib/access/authoring';
 import { requireViewer } from '@/lib/auth/guards';
-import { CourseEditor } from './course-editor';
-import { AddLessonDialog } from './add-lesson-dialog';
+// Round 2, chunk 3: these moved to the unified editor at /courses/[id]/edit,
+// which is superseding this page. Imported from the new location rather than
+// duplicated, since this page is itself due for deletion once /teach stops
+// linking here (chunk 5).
+import { CourseEditor } from '../../../courses/[courseId]/edit/course-editor';
+import { AddLessonDialog } from '../../../courses/[courseId]/edit/add-lesson-dialog';
 
 /**
  * Editing one course: what it says, and what comes with it.

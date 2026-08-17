@@ -36,6 +36,10 @@ export default async function LessonPage({
   const lesson = await getTenantDb(tenant.id).run(async (scope) => {
     const decision = await decideLessonAccess(scope, ctx, lessonId);
     if (!decision.allowed) return null;
+    // The predicate already decided whether a draft was appropriate to grant
+    // (admin and instructor, not an ordinary entitlement or free preview);
+    // findLessonWithCourse itself does not filter on publish state, so this
+    // second lookup returns the same row regardless of which branch granted.
     return findLessonWithCourse(scope, lessonId);
   });
 

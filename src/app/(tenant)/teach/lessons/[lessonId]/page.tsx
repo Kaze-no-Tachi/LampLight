@@ -29,6 +29,9 @@ export default async function EditLessonPage({
   const { lessonId } = await params;
 
   const data = await getTenantDb(viewer.tenant.id).run(async (scope) => {
+    // findLessonWithCourse does not filter on publish state, so a draft is
+    // found here exactly as a published lesson is; decideCourseAuthoring
+    // below is what actually gates this page.
     const lesson = await findLessonWithCourse(scope, lessonId);
     if (!lesson) return null;
 

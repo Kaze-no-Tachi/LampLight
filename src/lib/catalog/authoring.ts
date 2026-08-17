@@ -1,7 +1,8 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lt } from 'drizzle-orm';
 import {
   courseInstructors,
   courses,
+  lessons,
   memberships,
   modules,
   products,
@@ -85,10 +86,19 @@ export async function createCourse(
   const invalid = checkTitleAndSlug(title, slug);
   if (invalid) return invalid;
 
+  // Archived courses are excluded, matching the partial index that actually
+  // enforces this (courses_tenant_id_slug_active_key, migration 0009): an
+  // archived course's address is free for a new course to take.
   const [clash] = await scope.tx
     .select({ id: courses.id })
     .from(courses)
-    .where(and(eq(courses.tenantId, scope.tenantId), eq(courses.slug, slug)))
+    .where(
+      and(
+        eq(courses.tenantId, scope.tenantId),
+        eq(courses.slug, slug),
+        isNull(courses.archivedAt),
+      ),
+    )
     .limit(1);
 
   if (clash) {
@@ -213,6 +223,30 @@ export async function setCoursePublished(
     );
 
   return { status: 'ok' };
+}
+
+/**
+ * Retires a course. Rows survive: lessons, recordings, enrolments and every
+ * student's progress stay exactly as they were, because a course is what
+ * every one of those points at. What archiving actually does is take it out
+ * of every list and free its slug (courses_tenant_id_slug_active_key,
+ * migration 0009), so a new course may reuse the address.
+ *
+ * One-way on purpose, matching an archived course's own visibility rule: there
+ * is no unarchive, the same way there is no path back for an archived lesson.
+ * An institute that archived the wrong course makes a new one.
+ */
+export async function archiveCourse(
+  scope: TenantScope,
+  courseId: string,
+): Promise<{ status: 'ok' } | { status: 'not_found' }> {
+  const [archived] = await scope.tx
+    .update(courses)
+    .set({ archivedAt: new Date() })
+    .where(and(eq(courses.tenantId, scope.tenantId), eq(courses.id, courseId)))
+    .returning({ id: courses.id });
+
+  return archived ? { status: 'ok' } : { status: 'not_found' };
 }
 
 /**
@@ -382,6 +416,115 @@ export async function setProgramCourses(
       })),
     );
   }
+
+  return { status: 'ok' };
+}
+
+/**
+ * Publishes or withdraws one lesson, distinct from `is_free_preview`
+ * (round 2, chunk 3). A lesson can be published while still gated by the
+ * access predicate exactly as a free-preview one can be unpublished while
+ * open to nobody but its author: publication is "is this finished", the
+ * predicate is "who may hear it".
+ */
+export async function setLessonPublished(
+  scope: TenantScope,
+  lessonId: string,
+  isPublished: boolean,
+): Promise<{ status: 'ok' } | { status: 'not_found' }> {
+  const [updated] = await scope.tx
+    .update(lessons)
+    .set({ isPublished })
+    .where(and(eq(lessons.tenantId, scope.tenantId), eq(lessons.id, lessonId)))
+    .returning({ id: lessons.id });
+
+  return updated ? { status: 'ok' } : { status: 'not_found' };
+}
+
+/**
+ * Retires a lesson. The row and its progress survive; archived_at is what
+ * every read filters on, the same rule an archived course gets, so this is
+ * hidden from its own author too, not only from students. One-way, matching
+ * the course: an institute that archived the wrong lesson makes a new one.
+ */
+export async function archiveLesson(
+  scope: TenantScope,
+  lessonId: string,
+): Promise<{ status: 'ok' } | { status: 'not_found' }> {
+  const [archived] = await scope.tx
+    .update(lessons)
+    .set({ archivedAt: new Date() })
+    .where(and(eq(lessons.tenantId, scope.tenantId), eq(lessons.id, lessonId)))
+    .returning({ id: lessons.id });
+
+  return archived ? { status: 'ok' } : { status: 'not_found' };
+}
+
+export type ReorderDirection = 'up' | 'down';
+export type ReorderResult = { status: 'ok' | 'not_found' | 'edge' };
+
+/**
+ * Moves a lesson one place earlier or later among its own module's lessons,
+ * by swapping sort_order with whichever neighbour currently sits there.
+ * Rewrites the affected pair only, not the whole list: a course with three
+ * hundred lessons does not need three hundred rows touched to move one.
+ *
+ * Archived lessons are invisible to the search for a neighbour. Otherwise
+ * moving past one would shift a lesson two places in what anybody still sees
+ * while the button said one, and the gap in sort_order an archive leaves
+ * behind never needs closing: nothing reads sort_order as a position, only as
+ * an order.
+ */
+export async function reorderLesson(
+  scope: TenantScope,
+  lessonId: string,
+  direction: ReorderDirection,
+): Promise<ReorderResult> {
+  const [lesson] = await scope.tx
+    .select({ moduleId: lessons.moduleId, sortOrder: lessons.sortOrder })
+    .from(lessons)
+    .where(
+      and(
+        eq(lessons.tenantId, scope.tenantId),
+        eq(lessons.id, lessonId),
+        isNull(lessons.archivedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!lesson) return { status: 'not_found' };
+
+  const [neighbour] = await scope.tx
+    .select({ id: lessons.id, sortOrder: lessons.sortOrder })
+    .from(lessons)
+    .where(
+      and(
+        eq(lessons.tenantId, scope.tenantId),
+        eq(lessons.moduleId, lesson.moduleId),
+        isNull(lessons.archivedAt),
+        direction === 'up'
+          ? lt(lessons.sortOrder, lesson.sortOrder)
+          : gt(lessons.sortOrder, lesson.sortOrder),
+      ),
+    )
+    .orderBy(
+      direction === 'up' ? desc(lessons.sortOrder) : asc(lessons.sortOrder),
+    )
+    .limit(1);
+
+  if (!neighbour) return { status: 'edge' };
+
+  await scope.tx
+    .update(lessons)
+    .set({ sortOrder: neighbour.sortOrder })
+    .where(and(eq(lessons.tenantId, scope.tenantId), eq(lessons.id, lessonId)));
+
+  await scope.tx
+    .update(lessons)
+    .set({ sortOrder: lesson.sortOrder })
+    .where(
+      and(eq(lessons.tenantId, scope.tenantId), eq(lessons.id, neighbour.id)),
+    );
 
   return { status: 'ok' };
 }
