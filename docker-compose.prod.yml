@@ -72,6 +72,9 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # The schema this release expects is applied before it serves a request.
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test:
         [
@@ -87,13 +90,31 @@ services:
       start_period: 20s
       retries: 3
 
-  # Run explicitly before the app rolls, never automatically:
-  #   docker compose -f docker-compose.prod.yml --profile tools run --rm migrate
-  # The profile keeps `up` from starting it, which matters because two
-  # instances racing the migration table is how a schema gets corrupted.
+  # MIGRATIONS RUN AS PART OF `up`, AND FINISH BEFORE THE APP STARTS.
+  #
+  # This used to sit behind a `tools` profile, on the reasoning that two app
+  # instances racing the migration table is how a schema gets corrupted. True,
+  # and it does not apply here: this stack runs one replica, and the race it
+  # guarded against needs two. What the profile bought instead was an ordering
+  # rule that lived in the deploy tool's configuration rather than in this file,
+  # so every deploy depended on somebody having set a pre-deploy hook correctly,
+  # with the right project name, in a field they had to go and find. Getting it
+  # wrong is silent: the app starts against an old schema, or compose starts a
+  # second Postgres and migrates that one perfectly.
+  #
+  # So the ordering is stated here, where it cannot be forgotten, and `app`
+  # waits for this to exit successfully. A failed migration now fails the deploy
+  # rather than producing a running site on a schema it does not match.
+  #
+  # It stays runnable on its own for the operations that are not a deploy:
+  #   docker compose -f docker-compose.prod.yml run --rm migrate
+  #   docker compose -f docker-compose.prod.yml run --rm \
+  #     migrate node_modules/.bin/tsx src/db/bootstrap-admin.ts you@example.com
+  #
+  # If this ever grows to more than one replica, the race comes back and the
+  # ordering belongs in a release process again rather than in compose.
   migrate:
     image: ${LAMPLIGHT_MIGRATOR_IMAGE:-ghcr.io/kaze-no-tachi/lamplight:latest-migrator}
-    profiles: ['tools']
     restart: 'no'
     environment:
       NODE_ENV: production

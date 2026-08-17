@@ -263,7 +263,7 @@ is what it answers everybody.
 Once, after migrations:
 
 ```bash
-docker compose -f docker-compose.prod.yml --profile tools run --rm \
+docker compose -f docker-compose.prod.yml run --rm \
   -e BOOTSTRAP_PASSWORD='<a password you choose, 12 or more>' \
   migrate node_modules/.bin/tsx src/db/bootstrap-admin.ts you@example.com "Your Name"
 ```
@@ -295,13 +295,18 @@ Then sign in at the apex and provision the first institute (section 4a).
 Pushing to `main` runs CI. If verify passes, two images are published to GHCR
 (the application and the migrator), then Dokploy is pinged.
 
-**Migrations run before the application rolls, as a separate step.** Set this
-as the Dokploy pre-deploy command:
+**Migrations are part of `up`, and there is no pre-deploy hook to configure.**
+The compose file orders them: `migrate` runs to completion and only then does
+`app` start. A failed migration fails the deploy rather than leaving a running
+site on a schema it does not match.
 
-```bash
-docker compose -f docker-compose.prod.yml pull && \
-docker compose -f docker-compose.prod.yml --profile tools run --rm migrate
-```
+That ordering used to live in Dokploy's pre-deploy field, and it was the wrong
+home for it. It had to be found, it had to repeat the project name, and both
+ways of getting it wrong are silent: the app starts against an old schema, or
+compose starts a second Postgres and migrates that one perfectly while the real
+database sits untouched.
+
+Leave the pre-deploy command empty.
 
 **The `pull` is not redundant, and leaving it out is why a deploy can appear
 to succeed while serving the previous release.** Dokploy redeploys by bringing
@@ -329,11 +334,6 @@ CI, which is what keeps a small box viable.
 containers and the Postgres volume. A different one silently starts a second
 stack with an empty database beside the real one.
 
-The same applies to the pre-deploy command, which needs the project name for a
-sharper reason: `migrate` declares `depends_on: postgres`, so under a different
-project name compose starts its own Postgres, migrates that, and leaves the
-real database untouched while reporting success.
-
 Once first light is behind you, prefer pinning `LAMPLIGHT_IMAGE` and
 `LAMPLIGHT_MIGRATOR_IMAGE` to a commit sha instead. A tag that never moves
 cannot be stale, the deployed version is legible from the environment, and
@@ -348,9 +348,13 @@ Manual path, if Dokploy is unavailable:
 
 ```bash
 cd /srv/lamplight
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml --profile tools run --rm migrate
-docker compose -f docker-compose.prod.yml up -d --wait
+docker compose -f docker-compose.prod.yml up -d --pull always --wait
+```
+
+Migrations run inside that, in order. To run them alone, without deploying:
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm migrate
 ```
 
 `--wait` blocks until healthchecks pass, so the command failing means the
