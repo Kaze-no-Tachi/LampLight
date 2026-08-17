@@ -1,6 +1,5 @@
 'use server';
 
-import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { getTenantDb } from '@/db/client';
@@ -18,10 +17,12 @@ import {
   decideModuleAuthoring,
 } from '@/lib/access/authoring';
 import { requireViewer } from '@/lib/auth/guards';
-import { checkUpload } from '@/lib/media/uploads';
-import { signObjectWrite, statObject, storageConfigured } from '@/lib/storage';
-import { buildObjectKey } from '@/lib/storage/keys';
-import { deleteObject } from '@/lib/storage';
+import {
+  confirmAttachment,
+  removeAttachment,
+  reserveAttachment,
+  type AttachmentTarget,
+} from '@/lib/media/attachments';
 
 /**
  * Editing what a course and a lesson actually say.
@@ -244,82 +245,38 @@ export type DocumentTicket =
   | { status: 'error'; message: string };
 
 /**
- * A presigned PUT for a course handout, and the row it will fill.
+ * A presigned PUT for a document, on a course or on a lesson.
  *
- * The same three-step shape as an audio upload: reserve, send straight to the
- * bucket, then confirm against the bucket. byte_size stays null until it is
- * confirmed, and the course page only offers documents that have one.
+ * The work is in src/lib/media/attachments.ts, which both targets share: the
+ * only differences are which table the row lands in and which predicate
+ * decides, and everything easy to get wrong is the same for both.
  */
 export async function requestDocumentUploadAction(
   formData: FormData,
 ): Promise<DocumentTicket> {
   const viewer = await requireViewer();
-  const courseId = String(formData.get('courseId') ?? '');
-  const title = String(formData.get('title') ?? '').trim();
-  const filename = String(formData.get('filename') ?? 'document.pdf');
-  const isPublic = String(formData.get('isPublic') ?? '') === 'true';
+  const target = readTarget(formData);
+  if (!target) return { status: 'error', message: DENIED_MESSAGE };
 
-  if (!storageConfigured()) {
-    return {
-      status: 'error',
-      message:
-        'File storage is not configured here. Add the document as a link instead.',
-    };
-  }
-
-  const check = checkUpload({
-    kind: 'document',
-    contentType: String(formData.get('contentType') ?? ''),
-    byteSize: Number(formData.get('byteSize') ?? 0),
-  });
-  if (!check.ok) return { status: 'error', message: check.message };
-
-  const resourceId = randomUUID();
-
-  const key = await getTenantDb(viewer.tenant.id).run(async (scope) => {
-    const decision = await decideCourseAuthoring(
-      scope,
-      { tenantId: viewer.tenant.id, userId: viewer.userId },
-      courseId,
-    );
-    if (!decision.allowed) return null;
-
-    const objectKey = buildObjectKey({
-      tenantId: scope.tenantId,
-      purpose: 'lesson',
-      objectId: resourceId,
-      filename,
-    });
-
-    await scope.tx.insert(courseResources).values({
-      id: resourceId,
-      tenantId: scope.tenantId,
-      courseId,
-      kind: 'pdf',
-      title: title || filename,
-      storageKey: objectKey,
-      filename,
-      byteSize: null,
-      isPublic,
-      sortOrder: 0,
-    });
-
-    return objectKey;
-  });
-
-  if (!key) return { status: 'error', message: DENIED_MESSAGE };
-
-  const signed = await signObjectWrite(
-    viewer.tenant.id,
-    key,
-    check.contentType,
+  const result = await reserveAttachment(
+    { tenantId: viewer.tenant.id, actorUserId: viewer.userId },
+    target,
+    {
+      filename: String(formData.get('filename') ?? 'document.pdf'),
+      contentType: String(formData.get('contentType') ?? ''),
+      byteSize: Number(formData.get('byteSize') ?? 0),
+      title: String(formData.get('title') ?? '').trim(),
+      isPublic: String(formData.get('isPublic') ?? '') === 'true',
+    },
   );
+
+  if (result.status === 'error') return result;
 
   return {
     status: 'ok',
-    uploadUrl: signed.url,
-    resourceId,
-    contentType: check.contentType,
+    uploadUrl: result.uploadUrl,
+    resourceId: result.resourceId,
+    contentType: result.contentType,
   };
 }
 
@@ -327,124 +284,55 @@ export async function completeDocumentUploadAction(
   formData: FormData,
 ): Promise<EditResult> {
   const viewer = await requireViewer();
-  const resourceId = String(formData.get('resourceId') ?? '');
-  const courseId = String(formData.get('courseId') ?? '');
+  const target = readTarget(formData);
+  if (!target) return DENIED;
 
-  const key = await getTenantDb(viewer.tenant.id).run(async (scope) => {
-    const decision = await decideCourseAuthoring(
-      scope,
-      { tenantId: viewer.tenant.id, userId: viewer.userId },
-      courseId,
-    );
-    if (!decision.allowed) return null;
+  const result = await confirmAttachment(
+    { tenantId: viewer.tenant.id, actorUserId: viewer.userId },
+    target,
+    String(formData.get('resourceId') ?? ''),
+  );
 
-    const rows = await scope.tx
-      .select({ storageKey: courseResources.storageKey })
-      .from(courseResources)
-      .where(
-        and(
-          eq(courseResources.tenantId, scope.tenantId),
-          eq(courseResources.id, resourceId),
-          eq(courseResources.courseId, courseId),
-        ),
-      )
-      .limit(1);
-
-    return rows[0]?.storageKey ?? null;
-  });
-
-  if (!key) return DENIED;
-
-  const facts = await statObject(viewer.tenant.id, key);
-  if (!facts) {
-    return {
-      status: 'error',
-      message: 'That upload did not arrive. Try sending the file again.',
-    };
-  }
-
-  const check = checkUpload({
-    kind: 'document',
-    contentType: facts.contentType ?? '',
-    byteSize: facts.byteSize,
-  });
-  if (!check.ok) {
-    await deleteObject(viewer.tenant.id, key);
-    return { status: 'error', message: check.message };
-  }
-
-  await getTenantDb(viewer.tenant.id).run(async (scope) => {
-    await scope.tx
-      .update(courseResources)
-      .set({ byteSize: facts.byteSize })
-      .where(
-        and(
-          eq(courseResources.tenantId, scope.tenantId),
-          eq(courseResources.id, resourceId),
-        ),
-      );
-  });
-
-  revalidatePath(`/teach/courses/${courseId}`);
-  revalidatePath('/courses', 'layout');
-  return { status: 'ok' };
+  revalidateFor(target);
+  return result;
 }
 
-export async function removeCourseResourceAction(
+export async function removeAttachmentAction(
   formData: FormData,
 ): Promise<EditResult> {
   const viewer = await requireViewer();
-  const resourceId = String(formData.get('resourceId') ?? '');
+  const target = readTarget(formData);
+  if (!target) return DENIED;
+
+  const result = await removeAttachment(
+    { tenantId: viewer.tenant.id, actorUserId: viewer.userId },
+    target,
+    String(formData.get('resourceId') ?? ''),
+  );
+
+  revalidateFor(target);
+  return result;
+}
+
+/** Reads which thing is being attached to, or null if the form did not say. */
+function readTarget(formData: FormData): AttachmentTarget | null {
   const courseId = String(formData.get('courseId') ?? '');
+  if (courseId) return { kind: 'course', id: courseId };
 
-  const key = await getTenantDb(viewer.tenant.id).run(async (scope) => {
-    const decision = await decideCourseAuthoring(
-      scope,
-      { tenantId: viewer.tenant.id, userId: viewer.userId },
-      courseId,
-    );
-    if (!decision.allowed) return undefined;
+  const lessonId = String(formData.get('lessonId') ?? '');
+  if (lessonId) return { kind: 'lesson', id: lessonId };
 
-    const rows = await scope.tx
-      .select({ storageKey: courseResources.storageKey })
-      .from(courseResources)
-      .where(
-        and(
-          eq(courseResources.tenantId, scope.tenantId),
-          eq(courseResources.id, resourceId),
-          eq(courseResources.courseId, courseId),
-        ),
-      )
-      .limit(1);
+  return null;
+}
 
-    if (rows.length === 0) return undefined;
-
-    await scope.tx
-      .delete(courseResources)
-      .where(
-        and(
-          eq(courseResources.tenantId, scope.tenantId),
-          eq(courseResources.id, resourceId),
-        ),
-      );
-
-    return rows[0]?.storageKey ?? null;
-  });
-
-  if (key === undefined) return DENIED;
-
-  // A link has no object. An uploaded document does, and it goes too.
-  if (key && storageConfigured()) {
-    try {
-      await deleteObject(viewer.tenant.id, key);
-    } catch {
-      // Left for the operator; the document is already gone from the site.
-    }
+function revalidateFor(target: AttachmentTarget): void {
+  if (target.kind === 'course') {
+    revalidatePath(`/teach/courses/${target.id}`);
+    revalidatePath('/courses', 'layout');
+    return;
   }
-
-  revalidatePath(`/teach/courses/${courseId}`);
-  revalidatePath('/courses', 'layout');
-  return { status: 'ok' };
+  revalidatePath(`/teach/lessons/${target.id}`);
+  revalidatePath(`/lessons/${target.id}`);
 }
 
 /**

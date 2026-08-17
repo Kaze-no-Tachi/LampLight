@@ -124,6 +124,8 @@ export type CourseResource = {
   storageKey: string | null;
   url: string | null;
   filename: string | null;
+  /** Null while an upload is reserved and unconfirmed. Links carry zero. */
+  byteSize: number | null;
   isPublic: boolean;
 };
 
@@ -146,6 +148,7 @@ export async function listCourseResources(
       storageKey: courseResources.storageKey,
       url: courseResources.url,
       filename: courseResources.filename,
+      byteSize: courseResources.byteSize,
       isPublic: courseResources.isPublic,
     })
     .from(courseResources)

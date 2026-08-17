@@ -1,11 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getTenantDb } from '@/db/client';
-import {
-  findCourseBySlug,
-  listCourseResources,
-} from '@/db/repositories/catalog';
+import { findCourseBySlug } from '@/db/repositories/catalog';
 import { listLessonsForCourse } from '@/db/repositories/lessons';
+import { issueCourseDocuments } from '@/lib/access/media';
 import { decideLessonAccess } from '@/lib/access/predicate';
 import { getSessionUser } from '@/lib/auth/guards';
 import { Markdown } from '@/lib/markdown/render';
@@ -42,7 +40,6 @@ export default async function CoursePage({
     if (!course) return null;
 
     const lessons = await listLessonsForCourse(scope, course.id);
-    const resources = await listCourseResources(scope, course.id);
     const ctx = { tenantId: tenant.id, userId: user?.id ?? null };
 
     const rows = [];
@@ -57,7 +54,7 @@ export default async function CoursePage({
       });
     }
 
-    return { course, lessons: rows, resources };
+    return { course, lessons: rows };
   });
 
   // A course that is not published, or belongs to another institute, is not
@@ -73,8 +70,13 @@ export default async function CoursePage({
   const enrolled = view.lessons.some(
     (lesson) => lesson.open && !lesson.isFreePreview,
   );
-  const documents = view.resources.filter(
-    (resource) => resource.isPublic || enrolled,
+  // Signed where the document is an upload of ours, passed through where the
+  // institute pointed at their own site, and skipped where the upload was
+  // never confirmed to have arrived.
+  const documents = await issueCourseDocuments(
+    { tenantId: tenant.id, userId: user?.id ?? null },
+    view.course.id,
+    { enrolled },
   );
 
   return (
@@ -105,19 +107,15 @@ export default async function CoursePage({
           <h2 className="text-sm font-medium">Course documents</h2>
           <ul className="flex flex-col gap-1 text-sm">
             {documents.map((doc) => (
-              <li key={doc.id}>
-                {doc.url ? (
-                  <a
-                    href={doc.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="underline underline-offset-4"
-                  >
-                    {doc.title || doc.filename || 'Document'}
-                  </a>
-                ) : (
-                  <span>{doc.title || doc.filename || 'Document'}</span>
-                )}
+              <li key={doc.resourceId}>
+                <a
+                  href={doc.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-4"
+                >
+                  {doc.title}
+                </a>
                 {!doc.isPublic && (
                   <span className="text-muted-foreground ml-2 text-xs">
                     enrolled students only

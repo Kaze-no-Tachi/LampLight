@@ -28,8 +28,15 @@ Shipped and verified against something real, not just tests:
 - Superadmin tenant provisioning (P0-13)
 - Self-host and production compose stacks, both actually run
 
-Not started: payments (P0-7), the audio player (P0-8), manual enrollment
-(P0-11), assessment (deferred by the PRD), and any deployment to a real host.
+- Manual enrollment, roster, bulk invites, revocation (P0-11)
+- The persistent player: survives navigation, position synced server-side,
+  speed, keyboard shortcuts (P0-8)
+- Instructor uploads, confirmed against the bucket before anybody is offered
+  them, and editing screens for course descriptions, lesson notes, syllabus,
+  and handouts
+
+Not started: payments (P0-7), assessment (deferred by the PRD), and any
+deployment to a real host.
 
 ## Phase 5: get it live
 
@@ -81,14 +88,69 @@ usually while doing something else.
 - Real uploads: instructors putting actual audio in, which exercises the storage
   path end to end rather than through a test
 
-## Phase 8: assessment
+## Phase 8: bulk work, and getting data in and out
+
+An institute with three hundred students and eight years of recordings does
+not onboard one row at a time, and one that wants to leave should be able to.
+Both are the same feature seen from two sides.
+
+- Bulk actions on the roster: enrol a list into a program, revoke a cohort,
+  invite a spreadsheet of addresses. The single-row versions exist and each
+  one already writes an audit row, so the work here is the shape of a batch
+  that half succeeds, which is the normal outcome
+- CSV import for students and enrollments, with a dry run that reports what
+  it would do before it does any of it. An import that discovers its problems
+  halfway through is worse than one that refuses
+- Import for content: a course, its sections, its lessons, and a manifest
+  pointing at audio files, so an institute arriving with a back catalogue is
+  not typing it in
+- Export of everything an institute owns, as files rather than as an API
+  call: their courses, their roster, their enrollments, their audio. Portable
+  because the licence is AGPL and the promise is that an institute can walk,
+  and because an export is also the backup an institute understands
+- Media by URL as well as by upload, since an institute with eight years of
+  recordings on a server does not want to re-upload them by hand
+
+The rule that shapes all of it: nothing bulk may bypass the checks the
+single-row path makes. The tenant is the resolved host, the predicate still
+decides, and every grant still names who made it. A bulk endpoint that took
+a tenant id in its body would undo the whole isolation model in one line.
+
+## Phase 9: an API, and agents that can use it
+
+Institutes want their own automation, and increasingly they want an agent to
+do it. The two are the same surface with different clients.
+
+- Per-institute API keys, scoped to exactly one tenant, hashed at rest like
+  the invitation tokens, revocable, and shown once. A key is a bearer token,
+  so it gets the same treatment as a signed URL: assume it leaks eventually
+- A REST surface over what the screens already do: courses, lessons,
+  enrollments, people, progress. The repositories and predicates are already
+  the authority, so an endpoint is a thin caller rather than a second
+  implementation of the rules
+- Idempotency keys on every write, because an agent retries and a student
+  enrolled twice is a support ticket
+- Rate limits per key, and an audit row per call that changes anything, with
+  the key as the actor. "Which agent did this" has to be answerable
+- An MCP server exposing the same operations as tools, so an institute can
+  point Claude at their own instance. It has to be the same API underneath:
+  a second path with its own rules is a second set of bugs
+- Read-only scopes as the default, because most of what an agent is asked to
+  do is answer a question about the roster
+
+The isolation model is what makes this safe to offer at all: a key resolves to
+one tenant, every read path is already scoped, and RLS is underneath. That is
+also why the API cannot be bolted on carelessly, and why it comes after the
+platform has been used in anger by at least one institute.
+
+## Phase 10: assessment
 
 Deferred by the PRD and worth keeping deferred until an institute is teaching on
 the platform and can say what they actually need. Quizzes, exams, grades, and a
 gradebook are a large surface, and building them from imagination is how you get
 a feature nobody uses.
 
-## Phase 9: payments (P0-7)
+## Phase 11: payments (P0-7)
 
 Last on purpose. Nothing above depends on it, and it is the piece where being
 wrong costs somebody money.
@@ -99,7 +161,7 @@ wrong costs somebody money.
 - Refunds and what they do to access
 - The application fee, per tenant, so design partners sit at zero
 
-## Phase 10: before anybody who is not a friend uses it
+## Phase 12: before anybody who is not a friend uses it
 
 - Self-host documentation good enough for a stranger, and a restore drill
 - Accessibility pass. Known gap: the sign-in form's inputs have no labels

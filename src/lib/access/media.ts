@@ -1,4 +1,5 @@
 import { getTenantDb } from '@/db/client';
+import { listCourseResources } from '@/db/repositories/catalog';
 import { listLessonResources } from '@/db/repositories/lessons';
 import { signObjectRead, type StorageSigner } from '@/lib/storage';
 import { decideLessonAccess, type AccessContext } from './predicate';
@@ -75,6 +76,76 @@ export async function issueLessonMedia(
       isDownloadable: resource.isDownloadable,
       url: signed.url,
       expiresAt: signed.expiresAt,
+    });
+  }
+
+  return issued;
+}
+
+export type IssuedDocument = {
+  readonly resourceId: string;
+  readonly title: string;
+  readonly isPublic: boolean;
+  /** A signed URL for an uploaded file, or the institute's own link. */
+  readonly url: string;
+};
+
+/**
+ * Course documents, signed where they are ours and passed through where they
+ * are somebody else's.
+ *
+ * WHAT DECIDES, AND WHAT IT DOES NOT DECIDE
+ *
+ * A public document is public: a syllabus is how somebody chooses whether to
+ * enrol, so it is reachable by anybody looking at the course page. Everything
+ * else needs the caller to have established that this person is enrolled, and
+ * the caller passes that in rather than this function guessing, because
+ * "enrolled in this course" is the access predicate's question and it is
+ * already answered per lesson on the page that calls this.
+ *
+ * Reserved uploads are skipped. A row whose object was never confirmed would
+ * otherwise be offered as a link that 404s from the bucket.
+ */
+export async function issueCourseDocuments(
+  ctx: AccessContext,
+  courseId: string,
+  options: { enrolled: boolean },
+  signer: StorageSigner | null = null,
+): Promise<IssuedDocument[]> {
+  const resources = await getTenantDb(ctx.tenantId).run((scope) =>
+    listCourseResources(scope, courseId),
+  );
+
+  const issued: IssuedDocument[] = [];
+
+  for (const resource of resources) {
+    if (!resource.isPublic && !options.enrolled) continue;
+
+    if (resource.url) {
+      issued.push({
+        resourceId: resource.id,
+        title: resource.title || resource.filename || 'Document',
+        isPublic: resource.isPublic,
+        url: resource.url,
+      });
+      continue;
+    }
+
+    // An upload that was reserved and never confirmed. Not offered, because
+    // the object behind it may not exist.
+    if (!resource.storageKey || resource.byteSize === null) continue;
+
+    const signed = await signObjectRead(
+      ctx.tenantId,
+      resource.storageKey,
+      signer,
+    );
+
+    issued.push({
+      resourceId: resource.id,
+      title: resource.title || resource.filename || 'Document',
+      isPublic: resource.isPublic,
+      url: signed.url,
     });
   }
 

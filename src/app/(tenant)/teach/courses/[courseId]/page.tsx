@@ -123,6 +123,7 @@ export default async function EditCoursePage({
           kind: resource.kind,
           title: resource.title,
           isPublic: resource.isPublic,
+          byteSize: resource.byteSize,
           filename: resource.filename,
           url: resource.url,
         }))}

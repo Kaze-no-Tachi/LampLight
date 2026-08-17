@@ -2,9 +2,8 @@
 
 import { useState, useTransition } from 'react';
 import { Markdown } from '@/lib/markdown/render';
-import { formatBytes } from '@/lib/media/uploads';
 import { formatTime } from '@/lib/player/track';
-import { removeResourceAction } from '../../actions';
+import { Attachments } from '../../attachments';
 import { addLessonLinkAction, updateLessonAction } from '../../edit-actions';
 import { LessonRow } from '../../lesson-row';
 
@@ -155,132 +154,19 @@ export function LessonEditor({
         </ul>
       </section>
 
-      <LessonAttachments
-        lessonId={lesson.id}
-        attachments={attachments}
-        onError={setError}
+      <Attachments
+        target={{ kind: 'lesson', id: lesson.id }}
+        addLink={addLessonLinkAction}
+        title="Materials"
+        description="Handouts for this lesson, shown to whoever may hear it and to nobody else."
+        attachments={attachments.map((resource) => ({
+          id: resource.id,
+          kind: resource.kind,
+          label: resource.filename ?? 'Material',
+          byteSize: resource.byteSize,
+          url: null,
+        }))}
       />
     </div>
-  );
-}
-
-/**
- * Handouts for one lesson.
- *
- * Links only for now, and deliberately: a lesson handout is gated by the
- * access predicate exactly as the recording is, so an uploaded one needs the
- * same confirm-it-arrived path the audio has, and duplicating that here would
- * mean two copies of the part that is easy to get wrong. The course-level
- * uploader covers the syllabus case, which is the one institutes actually ask
- * for first.
- */
-function LessonAttachments({
-  lessonId,
-  attachments,
-  onError,
-}: {
-  lessonId: string;
-  attachments: Resource[];
-  onError: (message: string | null) => void;
-}) {
-  const [title, setTitle] = useState('');
-  const [url, setUrl] = useState('');
-  const [pending, startTransition] = useTransition();
-
-  function add() {
-    const data = new FormData();
-    data.set('lessonId', lessonId);
-    data.set('title', title);
-    data.set('url', url);
-
-    startTransition(async () => {
-      const result = await addLessonLinkAction(data);
-      onError(result.status === 'error' ? result.message : null);
-      if (result.status === 'ok') {
-        setTitle('');
-        setUrl('');
-      }
-    });
-  }
-
-  function remove(resourceId: string) {
-    const data = new FormData();
-    data.set('lessonId', lessonId);
-    data.set('resourceId', resourceId);
-
-    startTransition(async () => {
-      const result = await removeResourceAction(data);
-      onError(result.status === 'error' ? result.message : null);
-    });
-  }
-
-  return (
-    <section className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-medium">Materials</h2>
-        <p className="text-muted-foreground text-sm">
-          Shown to whoever may hear this lesson, and to nobody else.
-        </p>
-      </div>
-
-      {attachments.length > 0 && (
-        <ul className="flex flex-col gap-1 text-sm">
-          {attachments.map((resource) => (
-            <li
-              key={resource.id}
-              className="flex items-center gap-3 border-b py-2"
-            >
-              <span className="truncate">
-                {resource.filename ?? 'Material'}
-              </span>
-              <span className="text-muted-foreground text-xs">
-                {resource.kind === 'link'
-                  ? 'Link'
-                  : resource.byteSize === null
-                    ? 'never finished uploading'
-                    : formatBytes(resource.byteSize)}
-              </span>
-              <button
-                type="button"
-                disabled={pending}
-                onClick={() => remove(resource.id)}
-                className="text-destructive ml-auto text-xs underline disabled:opacity-60"
-              >
-                Remove
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border p-4">
-        <label className="flex flex-col gap-1 text-sm">
-          Name
-          <input
-            value={title}
-            onChange={(event) => setTitle(event.target.value)}
-            placeholder="Reading list"
-            className="rounded-md border px-3 py-2"
-          />
-        </label>
-        <label className="flex min-w-64 flex-1 flex-col gap-1 text-sm">
-          Web address
-          <input
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            placeholder="https://example.edu/reading.pdf"
-            className="rounded-md border px-3 py-2"
-          />
-        </label>
-        <button
-          type="button"
-          disabled={pending || !url}
-          onClick={add}
-          className="rounded-md border px-3 py-2 text-sm disabled:opacity-60"
-        >
-          Add
-        </button>
-      </div>
-    </section>
   );
 }
