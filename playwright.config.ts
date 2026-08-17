@@ -18,15 +18,30 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
+        // EVERY TENANT PAGE IS A FUNCTION OF THE HOST HEADER.
+        //
+        // A browser cannot be told to send a Host that disagrees with the URL,
+        // and it should not be: that is the header the whole isolation model
+        // turns on. So the browser resolves the institutes' real hostnames to
+        // the local server instead, which means these tests navigate to
+        // http://grace.lamplight.school:3000 exactly as a person would, with a
+        // real Origin, real cookies, and real canonical redirects.
+        //
+        // Doing it here rather than in /etc/hosts keeps it working on any
+        // machine and in CI without root.
         // Pinned Playwright expects a browser build this image does not ship.
         // Point at the preinstalled Chromium rather than downloading one.
-        ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
-          ? {
-              launchOptions: {
-                executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH,
-              },
-            }
-          : {}),
+        launchOptions: {
+          args: [
+            `--host-resolver-rules=MAP *.lamplight.school 127.0.0.1, MAP lamplight.school 127.0.0.1, MAP *.gracebible.test 127.0.0.1`,
+            // Playback in a headless browser needs no gesture policy fight.
+            '--autoplay-policy=no-user-gesture-required',
+          ],
+          // Pinned Playwright expects a browser build some images do not ship.
+          ...(process.env.PLAYWRIGHT_CHROMIUM_PATH
+            ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_PATH }
+            : {}),
+        },
       },
     },
   ],
@@ -63,6 +78,16 @@ export default defineConfig({
       // relaxed for it: mail goes to the log. Nothing in the suite reads it,
       // since activation tokens are planted directly (tests/helpers/invite.ts).
       MAIL_TRANSPORT: 'console',
+      // The media path is part of what the browser suite covers now, so the
+      // server under test needs a bucket. These match the development stack
+      // and CI's minio service.
+      S3_ENDPOINT: process.env.S3_ENDPOINT ?? 'http://localhost:9000',
+      S3_REGION: process.env.S3_REGION ?? 'us-east-1',
+      S3_BUCKET: process.env.S3_BUCKET ?? 'lamplight-media',
+      S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID ?? 'lamplight_minio',
+      S3_SECRET_ACCESS_KEY:
+        process.env.S3_SECRET_ACCESS_KEY ?? 'lamplight_minio_password',
+      S3_FORCE_PATH_STYLE: 'true',
     },
   },
 });

@@ -31,6 +31,10 @@ export default async function TeachPage() {
             .select({ id: courses.id, title: courses.title })
             .from(courses)
             .where(eq(courses.tenantId, scope.tenantId))
+            // Ordered, because a list of courses that shuffles between page
+            // loads is disorienting for the person using it and makes any test
+            // that says "the first course" quietly nondeterministic.
+            .orderBy(courses.title)
         : await scope.tx
             .select({ id: courses.id, title: courses.title })
             .from(courses)
@@ -46,7 +50,8 @@ export default async function TeachPage() {
                 eq(courses.tenantId, scope.tenantId),
                 eq(courseInstructors.userId, viewer.userId),
               ),
-            );
+            )
+            .orderBy(courses.title);
 
     if (mine.length === 0) return [];
 

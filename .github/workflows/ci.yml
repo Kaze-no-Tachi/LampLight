@@ -16,6 +16,14 @@ env:
   DATABASE_URL: postgres://lamplight_app:lamplight_app_password@localhost:5432/lamplight
   DATABASE_ADMIN_URL: postgres://lamplight_admin:lamplight_admin_password@localhost:5432/lamplight
   LAMPLIGHT_APP_PASSWORD: lamplight_app_password
+  # Matches the development stack, so a test that passes here is exercising
+  # the same signing and key rules a developer sees locally.
+  S3_ENDPOINT: http://localhost:9000
+  S3_REGION: us-east-1
+  S3_BUCKET: lamplight-media
+  S3_ACCESS_KEY_ID: lamplight_minio
+  S3_SECRET_ACCESS_KEY: lamplight_minio_password
+  S3_FORCE_PATH_STYLE: 'true'
 
 jobs:
   verify:
@@ -106,6 +114,20 @@ jobs:
           grep -qE "ƒ /\s" /tmp/build.log \
             || { echo "FAIL: the tenant route / is not dynamic"; exit 1; }
           echo "all host-dependent routes are dynamic"
+
+      # Object storage, so the browser suite exercises the media path for real:
+      # an instructor uploading a lecture, the confirm-it-arrived step that
+      # asks the bucket, and a student playing what came back. A skipped test
+      # protects nothing.
+      #
+      # Started from the development compose file rather than declared again as
+      # a service container, so there is one definition of how Minio is
+      # configured and CI cannot drift from what a developer runs. Postgres
+      # stays a service container because it has to be up before any step runs.
+      - name: Object storage for the browser suite
+        run: |
+          docker compose up -d minio minio-init
+          docker compose logs minio-init
 
       - name: End to end tests
         # The auth boundary lives here rather than in the unit suite, because
