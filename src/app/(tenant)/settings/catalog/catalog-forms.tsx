@@ -8,6 +8,7 @@ import {
   createProgramAction,
   removeInstructorAction,
   setProgramCoursesAction,
+  setProgramPublishedAction,
   setPublishedAction,
   type CatalogResult,
 } from './actions';
@@ -287,7 +288,30 @@ export function ProgramRow({
         <span className="text-muted-foreground font-mono text-xs">
           {program.slug}
         </span>
+        <span
+          className={
+            program.isPublished
+              ? 'text-muted-foreground text-xs'
+              : 'text-destructive text-xs'
+          }
+        >
+          {program.isPublished ? 'published' : 'not published'}
+        </span>
       </div>
+
+      <button
+        type="button"
+        disabled={pending}
+        className="self-start rounded-md border px-3 py-1 text-sm disabled:opacity-60"
+        onClick={() => {
+          const data = new FormData();
+          data.set('programId', program.id);
+          data.set('publish', String(!program.isPublished));
+          run(setProgramPublishedAction, data);
+        }}
+      >
+        {program.isPublished ? 'Withdraw' : 'Publish'}
+      </button>
 
       {courses.length === 0 ? (
         <p className="text-muted-foreground text-sm">

@@ -10,6 +10,7 @@ import {
   createProgram,
   removeInstructor,
   setCoursePublished,
+  setProgramPublished,
   setProgramCourses,
 } from '@/lib/catalog/authoring';
 
@@ -115,6 +116,41 @@ export async function setPublishedAction(
 
   if (result.status === 'not_found') {
     return { status: 'error', message: 'That course no longer exists.' };
+  }
+
+  revalidatePath('/settings/catalog');
+  revalidatePath('/courses');
+  return {
+    status: 'ok',
+    message: publish ? 'Published.' : 'Withdrawn from the catalogue.',
+  };
+}
+
+export async function setProgramPublishedAction(
+  formData: FormData,
+): Promise<CatalogResult> {
+  const viewer = await requireRole('admin');
+  const programId = String(formData.get('programId') ?? '');
+  const publish = String(formData.get('publish') ?? '') === 'true';
+
+  const result = await getTenantDb(viewer.tenant.id).run(async (scope) => {
+    const done = await setProgramPublished(scope, programId, publish);
+
+    if (done.status === 'ok') {
+      await scope.tx.insert(auditLog).values({
+        tenantId: scope.tenantId,
+        actorUserId: viewer.userId,
+        action: publish ? 'catalog.published' : 'catalog.unpublished',
+        targetType: 'program',
+        targetId: programId,
+      });
+    }
+
+    return done;
+  });
+
+  if (result.status === 'not_found') {
+    return { status: 'error', message: 'That program no longer exists.' };
   }
 
   revalidatePath('/settings/catalog');

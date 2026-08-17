@@ -199,6 +199,43 @@ export async function setCoursePublished(
 }
 
 /**
+ * Publishes or withdraws a program.
+ *
+ * The same shape as a course, and it existed as an omission rather than a
+ * decision: the catalogue screen shipped with a publish button for courses and
+ * none for programs, so a program could be created and could never be seen. The
+ * public list filters on published, which made a new program invisible with no
+ * error and nothing to click.
+ */
+export async function setProgramPublished(
+  scope: TenantScope,
+  programId: string,
+  isPublished: boolean,
+): Promise<{ status: 'ok' } | { status: 'not_found' }> {
+  const [program] = await scope.tx
+    .select({ productId: programs.productId })
+    .from(programs)
+    .where(
+      and(eq(programs.tenantId, scope.tenantId), eq(programs.id, programId)),
+    )
+    .limit(1);
+
+  if (!program) return { status: 'not_found' };
+
+  await scope.tx
+    .update(products)
+    .set({ isPublished })
+    .where(
+      and(
+        eq(products.tenantId, scope.tenantId),
+        eq(products.id, program.productId),
+      ),
+    );
+
+  return { status: 'ok' };
+}
+
+/**
  * Puts somebody in front of a course, or takes them away from it.
  *
  * THE CHECK THAT MATTERS. The person has to hold a staff membership at this

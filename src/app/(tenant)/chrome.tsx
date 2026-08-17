@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { SignOutButton } from './sign-out-button';
 import type { Viewer } from '@/lib/auth/guards';
 import type { Branding } from '@/lib/theme/branding';
 import { themeCss } from '@/lib/theme/theme';
@@ -112,9 +113,12 @@ export function SiteHeader({
         ) : null}
 
         {viewer ? (
-          <Link href="/account" className="text-sm hover:underline">
-            Account
-          </Link>
+          <>
+            <Link href="/account" className="text-sm hover:underline">
+              Account
+            </Link>
+            <SignOutButton />
+          </>
         ) : (
           <Link
             href="/sign-in"

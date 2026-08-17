@@ -157,3 +157,64 @@ test.describe('every admin screen is reachable', () => {
     }
   });
 });
+
+test.describe('programs', () => {
+  test('can be published, which is the only way anybody sees one', async ({
+    page,
+    context,
+  }) => {
+    // THE BUG THIS COVERS. The catalogue shipped with a publish button for
+    // courses and none for programs. The public list filters on published, so
+    // every program an institute created was invisible for ever, with no error
+    // and nothing to click. Programs were reported as "not showing up
+    // anywhere"; they showed up nowhere because they could not be published.
+    await signIn(page, PEOPLE.admin);
+    await openCatalog(page);
+
+    const title = `Diploma ${Date.now()}`;
+    await page
+      .locator('input[placeholder="Certificate in Ministry"]')
+      .fill(title);
+    await page.getByRole('button', { name: /create program/i }).click();
+    await expect(page.getByText(/Program created/i)).toBeVisible();
+
+    const row = page.locator('li', { hasText: title }).first();
+    await expect(row).toContainText('not published');
+
+    const visitor = await context.newPage();
+    await visitor.goto(url(GRACE_HOST, '/courses'));
+    await expect(visitor.locator('main')).not.toContainText(title);
+
+    await row.getByRole('button', { name: /^Publish$/ }).click();
+    await expect(page.getByText('Published.')).toBeVisible();
+
+    await visitor.reload();
+    await expect(visitor.locator('main')).toContainText(title);
+  });
+});
+
+test.describe('signing out', () => {
+  test('is possible, and actually ends the session', async ({ page }) => {
+    // There was no sign-out control anywhere. On the shared office machine
+    // this product is used from, that is not a power user's problem.
+    await signIn(page, PEOPLE.student);
+    await page.goto(url(GRACE_HOST, '/account'));
+
+    await page.getByRole('button', { name: /^Sign out$/ }).click();
+
+    // The server, first and foremost. Asserting the header was the original
+    // mistake: the home page offers its own Sign in link, so that assertion
+    // passed while the session was still live.
+    const session = await page.evaluate(async () => {
+      const response = await fetch('/api/auth/get-session', {
+        cache: 'no-store',
+      });
+      return (await response.json()) as { user?: unknown } | null;
+    });
+    expect(session?.user).toBeFalsy();
+
+    // And a gated page is gated again.
+    const response = await page.goto(url(GRACE_HOST, '/account'));
+    expect(response?.status()).toBe(404);
+  });
+});
