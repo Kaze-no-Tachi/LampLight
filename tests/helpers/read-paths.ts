@@ -36,6 +36,7 @@ import {
   listLessonsForCourse,
   listResourcesForLessons,
 } from '@/db/repositories/lessons';
+import { listProgramProgress, listShelfCourses } from '@/db/repositories/shelf';
 import type { TenantScope } from '@/db/scope';
 import {
   courseBySlug,
@@ -449,6 +450,36 @@ export const READ_PATHS: ReadPath[] = [
       return ownedBySubject(
         rows.map((row) => row.userId),
         subjectUserIds,
+      );
+    },
+  },
+  {
+    name: 'shelf.listShelfCourses',
+    async run(scope, subject) {
+      // student1 holds a program, so their shelf is non-empty at both
+      // institutes, which is what makes the cross-tenant half meaningful.
+      const student = userByKey(subject, 'student1');
+      const rows = await listShelfCourses(scope, student.id);
+      const subjectIds = new Set(subject.courses.map((course) => course.id));
+      return ownedBySubject(
+        rows.map((row) => row.courseId),
+        subjectIds,
+      );
+    },
+  },
+  {
+    name: 'shelf.listProgramProgress',
+    async run(scope, subject) {
+      // student1, who holds a program enrolment in the fixture. The shared
+      // student was the obvious pick and holds only a lapsed course
+      // entitlement, so this assertion passed vacuously until the harness
+      // refused it for returning nothing under its own tenant.
+      const student = userByKey(subject, 'student1');
+      const rows = await listProgramProgress(scope, student.id);
+      const subjectIds = new Set(subject.programs.map((program) => program.id));
+      return ownedBySubject(
+        rows.map((row) => row.programId),
+        subjectIds,
       );
     },
   },

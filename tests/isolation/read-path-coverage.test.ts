@@ -7,6 +7,7 @@ import * as domains from '@/db/repositories/domains';
 import * as entitlements from '@/db/repositories/entitlements';
 import * as lessons from '@/db/repositories/lessons';
 import * as progress from '@/db/repositories/progress';
+import * as shelf from '@/db/repositories/shelf';
 import * as settings from '@/db/repositories/settings';
 import { READ_PATHS } from '../helpers/read-paths';
 
@@ -35,6 +36,7 @@ const REPOSITORY_MODULES: Record<string, Record<string, unknown>> = {
   lessons,
   progress,
   settings,
+  shelf,
 };
 
 const REPOSITORY_DIR = resolve(
