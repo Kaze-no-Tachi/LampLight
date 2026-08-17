@@ -73,9 +73,20 @@ async function main(): Promise<void> {
   const created = await client.create(hostname);
   console.log(JSON.stringify(created, null, 2));
 
-  console.log('\nreading it back');
-  const fetched = await client.get(created.id);
-  console.log(`status: ${fetched.status}`);
+  // The certificate record does not exist at creation, so a probe that looked
+  // once would report the same incomplete list the settings page used to show
+  // and call it correct. Polling for it is the point.
+  console.log('\nwaiting for the certificate record');
+  for (const delay of [5_000, 10_000, 20_000]) {
+    await new Promise((resolve) => setTimeout(resolve, delay));
+    const fetched = await client.get(created.id);
+    const purposes = fetched.records.map((record) => record.purpose);
+    console.log(`  status ${fetched.status}, records: ${purposes.join(', ')}`);
+    if (purposes.includes('certificate')) {
+      console.log('\n' + JSON.stringify(fetched.records, null, 2));
+      break;
+    }
+  }
 
   if (keep) {
     console.log(`\nkeeping ${created.id}. Delete it when you are done.`);

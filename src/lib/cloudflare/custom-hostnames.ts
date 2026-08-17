@@ -24,8 +24,14 @@ export type DnsRecord = {
   readonly type: 'CNAME' | 'TXT';
   readonly name: string;
   readonly value: string;
-  /** What this record is for, in words an institute's IT contact can act on. */
-  readonly purpose: 'routing' | 'ownership';
+  /**
+   * What this record is for, in words an institute's IT contact can act on.
+   *
+   * Three, not two, and they are three separate records that Cloudflare
+   * returns at the same time. See toCustomHostname for what happened when this
+   * file assumed the last two were alternatives.
+   */
+  readonly purpose: 'routing' | 'ownership' | 'certificate';
 };
 
 export type CustomHostnameStatus =
@@ -253,9 +259,23 @@ function toCustomHostname(
     },
   ];
 
-  // The ownership record only exists while ownership is unproven. Once the
-  // hostname is live Cloudflare stops returning it, and showing a stale one
-  // invites an institute to delete a record that is now load bearing.
+  // TWO TXT RECORDS, NOT ONE, AND NOT ALTERNATIVES.
+  //
+  // This was written as an if/else, on the assumption that Cloudflare returned
+  // one or the other. It returns both, and they do different jobs:
+  //
+  //   _cf-custom-hostname.<host>  proves the domain belongs to the institute
+  //   _acme-challenge.<host>      proves it to the CA, so a certificate issues
+  //
+  // With the else, the ownership record won every time it was present, which
+  // is the entire pre-verification window, so the settings page showed an
+  // institute two records, they created both, and the certificate never
+  // issued because the record it needed was never displayed. The domain would
+  // sit in "Checking DNS" indefinitely with nothing to say why.
+  //
+  // Every unit test passed throughout, because the fake transport was written
+  // from the same wrong assumption as the code. It took calling the real API
+  // (scripts/cf-probe.ts) to see the second record at all.
   const ownership = value.ownership_verification;
   if (
     typeof ownership?.name === 'string' &&
@@ -267,7 +287,13 @@ function toCustomHostname(
       value: ownership.value,
       purpose: 'ownership',
     });
-  } else if (
+  }
+
+  // Not present at creation. Cloudflare answers with ssl.status
+  // "initializing" and no record, then issues one a few seconds later, so the
+  // institute has to be told that one more record is still coming rather than
+  // being shown a list that looks complete.
+  if (
     typeof value.ssl?.txt_name === 'string' &&
     typeof value.ssl.txt_value === 'string'
   ) {
@@ -275,7 +301,7 @@ function toCustomHostname(
       type: 'TXT',
       name: value.ssl.txt_name,
       value: value.ssl.txt_value,
-      purpose: 'ownership',
+      purpose: 'certificate',
     });
   }
 

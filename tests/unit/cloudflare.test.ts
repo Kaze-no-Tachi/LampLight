@@ -26,17 +26,54 @@ function failure(status: number, errors: { code: number; message: string }[]) {
   return { status, json: { success: false, errors } };
 }
 
-/** A hostname mid-setup: ownership not yet proven, no certificate. */
+/**
+ * A hostname a few seconds after creation, transcribed from a real response.
+ *
+ * The previous version of this fixture had ownership_verification and no
+ * ssl.txt_name, because that is what the code assumed, and the code passed
+ * against it while being wrong. Cloudflare sends both records at once. The
+ * shape below came from scripts/cf-probe.ts against a live zone.
+ */
 const PENDING_VALIDATION = {
   id: 'cf-1',
   hostname: 'learn.institute.edu',
-  status: 'pending_validation',
+  status: 'pending',
   ownership_verification: {
     type: 'txt',
     name: '_cf-custom-hostname.learn.institute.edu',
     value: 'ownership-token',
   },
-  ssl: { status: 'pending_validation' },
+  ssl: {
+    status: 'pending_validation',
+    txt_name: '_acme-challenge.learn.institute.edu',
+    txt_value: 'acme-token',
+  },
+};
+
+/**
+ * The same hostname at the instant it is created.
+ *
+ * Cloudflare has not issued the certificate record yet: ssl.status is
+ * "initializing" and there is no txt_name at all. Kept as its own fixture
+ * because the settings page has to handle a record list that is incomplete
+ * rather than final.
+ */
+const JUST_CREATED = {
+  id: 'cf-1',
+  hostname: 'learn.institute.edu',
+  status: 'pending',
+  ownership_verification: {
+    type: 'txt',
+    name: '_cf-custom-hostname.learn.institute.edu',
+    value: 'ownership-token',
+  },
+  ssl: {
+    id: 'ssl-1',
+    type: 'dv',
+    method: 'txt',
+    status: 'initializing',
+    certificate_authority: 'google',
+  },
 };
 
 beforeEach(() => {
@@ -50,7 +87,14 @@ afterEach(() => {
 });
 
 describe('creating a custom hostname', () => {
-  it('returns both records the institute has to create', async () => {
+  it('returns all three records the institute has to create', async () => {
+    // THE BUG THIS PREVENTS, AND IT SHIPPED.
+    //
+    // These two TXT records were written as an if/else, so the ownership one
+    // won for the whole pre-verification window and the certificate one was
+    // never shown. An institute would create everything on screen, and the
+    // certificate would never issue, because the record that unblocks it was
+    // not on screen. The unit tests all passed: the fake agreed with the bug.
     const transport: CloudflareTransport = async () => ok(PENDING_VALIDATION);
     const { createCustomHostnameClient } =
       await import('@/lib/cloudflare/custom-hostnames');
@@ -72,7 +116,32 @@ describe('creating a custom hostname', () => {
         value: 'ownership-token',
         purpose: 'ownership',
       },
+      {
+        type: 'TXT',
+        name: '_acme-challenge.learn.institute.edu',
+        value: 'acme-token',
+        purpose: 'certificate',
+      },
     ]);
+  });
+
+  it('copes with the certificate record not existing yet', async () => {
+    // Cloudflare answers "initializing" with no record at creation and issues
+    // one seconds later, so the list is briefly incomplete rather than wrong.
+    // The settings page reads the absence of a certificate record to say so.
+    const transport: CloudflareTransport = async () => ok(JUST_CREATED);
+    const { createCustomHostnameClient } =
+      await import('@/lib/cloudflare/custom-hostnames');
+
+    const result = await createCustomHostnameClient(transport).create(
+      'learn.institute.edu',
+    );
+
+    expect(result.records.map((record) => record.purpose)).toEqual([
+      'routing',
+      'ownership',
+    ]);
+    expect(result.status).toBe('verifying');
   });
 
   it('asks for TXT validation, not HTTP', async () => {

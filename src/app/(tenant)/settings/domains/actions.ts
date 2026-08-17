@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { requireRole } from '@/lib/auth/guards';
 import {
   attachDomain,
+  refreshDomain,
   removeDomain,
   setPrimaryDomain,
 } from '@/lib/domains/service';
@@ -33,6 +34,27 @@ export async function addDomainAction(
   return result.status === 'ok'
     ? { status: 'ok' }
     : { status: 'error', message: result.message };
+}
+
+/**
+ * Asks Cloudflare where this domain has got to, now, rather than waiting for
+ * the sweep.
+ *
+ * Needed because the record list is not complete at creation: the certificate
+ * validation record is issued a few seconds later, and without a way to ask
+ * again an institute would stare at a list missing the record that actually
+ * unblocks them until the next sweep happened to run.
+ */
+export async function checkDomainAction(
+  formData: FormData,
+): Promise<ActionResult> {
+  const viewer = await requireRole('admin');
+  const id = String(formData.get('id') ?? '');
+  if (!id) return { status: 'error', message: 'Nothing to check.' };
+
+  await refreshDomain(viewer.tenant.id, id);
+  revalidatePath('/settings/domains');
+  return { status: 'ok' };
 }
 
 export async function removeDomainAction(

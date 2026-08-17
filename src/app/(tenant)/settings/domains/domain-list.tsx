@@ -2,7 +2,11 @@
 
 import { useState, useTransition } from 'react';
 import type { DomainRecord } from '@/db/repositories/domains';
-import { removeDomainAction, setPrimaryAction } from './actions';
+import {
+  checkDomainAction,
+  removeDomainAction,
+  setPrimaryAction,
+} from './actions';
 
 /**
  * The DNS records an institute has to create, shown exactly as Cloudflare
@@ -38,6 +42,13 @@ export function DomainList({
   );
 }
 
+/** Said in the words an institute's IT contact would use, not Cloudflare's. */
+const PURPOSE: Record<string, string> = {
+  routing: 'Sends visitors to us',
+  ownership: 'Proves the domain is yours',
+  certificate: 'Issues the certificate',
+};
+
 function DomainCard({ domain }: { domain: DomainRecord }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -63,16 +74,17 @@ function DomainCard({ domain }: { domain: DomainRecord }) {
       {domain.status !== 'active' && domain.dnsRecords.length > 0 && (
         <div className="flex flex-col gap-2">
           <p className="text-muted-foreground text-sm">
-            Create these records with whoever manages your DNS. The CNAME sends
-            visitors to us. The TXT proves the domain is yours, and can be
-            deleted once the domain is live.
+            Create these records with whoever manages your DNS. Each row says
+            what it is for. The TXT records can be deleted once the domain is
+            live; the CNAME is what keeps it working.
           </p>
           <table className="w-full text-sm">
             <thead className="text-muted-foreground text-left">
               <tr>
                 <th className="py-1 pr-3 font-normal">Type</th>
                 <th className="py-1 pr-3 font-normal">Name</th>
-                <th className="py-1 font-normal">Value</th>
+                <th className="py-1 pr-3 font-normal">Value</th>
+                <th className="py-1 font-normal">What for</th>
               </tr>
             </thead>
             <tbody>
@@ -82,13 +94,29 @@ function DomainCard({ domain }: { domain: DomainRecord }) {
                   <td className="py-1 pr-3 font-mono break-all">
                     <Copyable value={record.name} />
                   </td>
-                  <td className="py-1 font-mono break-all">
+                  <td className="py-1 pr-3 font-mono break-all">
                     <Copyable value={record.value} />
+                  </td>
+                  <td className="text-muted-foreground py-1">
+                    {PURPOSE[record.purpose]}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+
+          {/* Cloudflare issues the certificate record a few seconds after the
+              hostname is created, so a list without it is not wrong, it is
+              early. Saying so beats an institute creating what they can see
+              and then waiting on a certificate that never comes. */}
+          {!domain.dnsRecords.some(
+            (record) => record.purpose === 'certificate',
+          ) && (
+            <p className="text-muted-foreground text-sm">
+              One more record, for the certificate, is still being issued. Check
+              again in a moment and it will appear here.
+            </p>
+          )}
         </div>
       )}
 
@@ -99,6 +127,16 @@ function DomainCard({ domain }: { domain: DomainRecord }) {
       )}
 
       <div className="flex gap-3">
+        {domain.status !== 'active' && (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => run(checkDomainAction)}
+            className="rounded-md border px-3 py-1 text-sm disabled:opacity-60"
+          >
+            {pending ? 'Checking...' : 'Check now'}
+          </button>
+        )}
         {domain.status === 'active' && !domain.isPrimary && (
           <button
             type="button"
