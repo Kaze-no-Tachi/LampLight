@@ -22,6 +22,10 @@ import {
   listDomains,
 } from '@/db/repositories/domains';
 import {
+  findProgress,
+  listProgressForLessons,
+} from '@/db/repositories/progress';
+import {
   findLessonWithCourse,
   listLessonResources,
   listLessonsForCourse,
@@ -275,6 +279,32 @@ export const READ_PATHS: ReadPath[] = [
       return ownedBySubject(
         rows.map((row) => row.courseId),
         courseIds(subject),
+      );
+    },
+  },
+  {
+    name: 'progress.findProgress',
+    async run(scope, subject) {
+      // The shared student has a seeded position at both institutes on this
+      // course, which is the read where a missing tenant filter shows one
+      // institute how far somebody got at the other.
+      const shared = userByKey(subject, 'shared');
+      const lesson = firstGatedLesson(
+        courseBySlug(subject, 'old-testament-survey'),
+      );
+      const row = await findProgress(scope, shared.id, lesson.id);
+      return ownedBySubject(row ? [row.lessonId] : [], lessonIds(subject));
+    },
+  },
+  {
+    name: 'progress.listProgressForLessons',
+    async run(scope, subject) {
+      const shared = userByKey(subject, 'shared');
+      const ids = [...lessonIds(subject)];
+      const rows = await listProgressForLessons(scope, shared.id, ids);
+      return ownedBySubject(
+        rows.map((row) => row.lessonId),
+        lessonIds(subject),
       );
     },
   },

@@ -6,8 +6,9 @@ import { issueLessonMedia } from '@/lib/access/media';
 import { decideLessonAccess } from '@/lib/access/predicate';
 import { getSessionUser } from '@/lib/auth/guards';
 import { Markdown } from '@/lib/markdown/render';
+import { formatTime } from '@/lib/player/track';
 import { requireTenant } from '@/lib/tenancy/context';
-import { LessonPlayer } from './lesson-player';
+import { LessonPlayButton } from './lesson-player';
 
 /**
  * A lesson, with its audio if this viewer may have it.
@@ -48,6 +49,11 @@ export default async function LessonPage({
   // URLs are signed and short lived exactly as the audio ones are: a lesson
   // handout is as much a thing somebody paid for as the recording is.
   const documents = (media ?? []).filter((item) => item.kind !== 'audio');
+
+  // One recording per lesson in practice. If a lesson ever carries several,
+  // the first is the lecture and the rest are alternates, which is a queue and
+  // a decision for the day somebody needs it.
+  const first = audio[0];
 
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 p-8">
@@ -94,20 +100,27 @@ export default async function LessonPage({
         </section>
       )}
 
-      {audio.length === 0 ? (
+      {first ? (
+        <LessonPlayButton
+          duration={
+            lesson.durationSeconds ? formatTime(lesson.durationSeconds) : null
+          }
+          track={{
+            lessonId: lesson.id,
+            resourceId: first.resourceId,
+            title: lesson.title,
+            courseTitle: lesson.courseTitle,
+            href: `/lessons/${lesson.id}`,
+            kind: 'audio',
+            url: first.url,
+            filename: first.filename,
+            isDownloadable: first.isDownloadable,
+          }}
+        />
+      ) : (
         <p className="text-muted-foreground">
           No audio has been uploaded for this lesson yet.
         </p>
-      ) : (
-        <LessonPlayer
-          title={lesson.title}
-          sources={audio.map((item) => ({
-            id: item.resourceId,
-            url: item.url,
-            filename: item.filename,
-            isDownloadable: item.isDownloadable,
-          }))}
-        />
       )}
     </main>
   );

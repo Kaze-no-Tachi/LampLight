@@ -21,6 +21,9 @@ export type LessonWithCourse = {
   durationSeconds: number | null;
   moduleId: string;
   courseId: string;
+  /** Carried along because the player shows which course it is playing from. */
+  courseTitle: string;
+  courseSlug: string;
 };
 
 export async function findLessonWithCourse(
@@ -37,6 +40,8 @@ export async function findLessonWithCourse(
       durationSeconds: lessons.durationSeconds,
       moduleId: lessons.moduleId,
       courseId: modules.courseId,
+      courseTitle: courses.title,
+      courseSlug: courses.slug,
     })
     .from(lessons)
     .innerJoin(
@@ -73,6 +78,8 @@ export async function listLessonsForCourse(
       durationSeconds: lessons.durationSeconds,
       moduleId: lessons.moduleId,
       courseId: modules.courseId,
+      courseTitle: courses.title,
+      courseSlug: courses.slug,
     })
     .from(lessons)
     .innerJoin(
@@ -80,6 +87,13 @@ export async function listLessonsForCourse(
       and(
         eq(modules.tenantId, scope.tenantId),
         eq(modules.id, lessons.moduleId),
+      ),
+    )
+    .innerJoin(
+      courses,
+      and(
+        eq(courses.tenantId, scope.tenantId),
+        eq(courses.id, modules.courseId),
       ),
     )
     .where(

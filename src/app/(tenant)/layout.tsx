@@ -5,6 +5,7 @@ import { primaryRedirectFor } from '@/lib/domains/redirect';
 import { requireTenant } from '@/lib/tenancy/context';
 import { loadBranding } from '@/lib/theme/branding';
 import { SiteFooter, SiteHeader, ThemeStyle } from './chrome';
+import { PlayerProvider } from './player/player-provider';
 
 /**
  * Never prerendered, and this is a correctness requirement rather than a
@@ -63,11 +64,20 @@ export default async function TenantLayout({
   return (
     <>
       <ThemeStyle branding={branding} />
-      <div className="flex min-h-screen flex-col">
-        <SiteHeader branding={branding} viewer={viewer} />
-        <div className="flex-1">{children}</div>
-        <SiteFooter branding={branding} />
-      </div>
+      {/*
+        The player wraps the whole subtree so that it is mounted once and never
+        unmounted. That is what "survives navigation" means in the App Router:
+        a client component in the layout keeps its state and its DOM while the
+        page under it changes. The bottom padding leaves room for the bar it
+        renders, so a footer is never trapped underneath it.
+      */}
+      <PlayerProvider>
+        <div className="flex min-h-screen flex-col pb-24">
+          <SiteHeader branding={branding} viewer={viewer} />
+          <div className="flex-1">{children}</div>
+          <SiteFooter branding={branding} />
+        </div>
+      </PlayerProvider>
     </>
   );
 }

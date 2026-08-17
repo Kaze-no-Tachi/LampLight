@@ -2,6 +2,7 @@ import { pathToFileURL } from 'node:url';
 import { config as loadEnv } from 'dotenv';
 import { closeAdminDb, getAdminDb } from './admin';
 import { resetData } from './reset';
+import { uploadSeedMedia, type SeedObject } from './seed-media';
 import {
   courseBySlug,
   PLATFORM_OPERATOR,
@@ -61,9 +62,16 @@ function collectUsers(tenantsToSeed: SeedTenant[]): SeedUser[] {
   return [...byId.values()];
 }
 
+/**
+ * Collected while seeding and uploaded at the end, so the recordings behind the
+ * fixture exist rather than being rows pointing at nothing.
+ */
+const seedObjects: SeedObject[] = [];
+
 export async function seedDatabase(): Promise<void> {
   const db = getAdminDb();
 
+  seedObjects.length = 0;
   await resetData();
 
   // Global identities first: memberships and every tenant-scoped user
@@ -101,6 +109,15 @@ export async function seedDatabase(): Promise<void> {
 
   for (const tenant of SEED_TENANTS) {
     await seedTenant(tenant);
+  }
+
+  // Last, and allowed to fail without failing the seed. A developer with no
+  // bucket running still gets a complete database, which is what every test
+  // needs; the audio is only needed by somebody actually listening.
+  try {
+    console.log(await uploadSeedMedia(seedObjects));
+  } catch (error) {
+    console.warn(`seed audio upload failed: ${String(error)}`);
   }
 }
 
@@ -346,19 +363,34 @@ async function seedTenant(tenant: SeedTenant): Promise<void> {
   );
 
   // Object keys are always prefixed with the tenant (PRD section 5.5).
+  //
+  // WAV rather than mp3, because these keys now have real objects behind them
+  // (see src/db/seed-media.ts) and a generated WAV needs no encoder. A key
+  // whose extension disagreed with what was uploaded would be a trap for the
+  // next person to look at the bucket.
   await db.insert(lessonResources).values(
     allLessons.map(({ lesson }) => ({
       id: lesson.resourceId,
       tenantId,
       lessonId: lesson.id,
       kind: 'audio' as const,
-      storageKey: `t/${tenantId}/lessons/${lesson.id}/audio.mp3`,
-      filename: `${lesson.slug}.mp3`,
-      byteSize: 18_400_000,
+      storageKey: `t/${tenantId}/lessons/${lesson.id}/audio.wav`,
+      filename: `${lesson.slug}.wav`,
+      byteSize: 1_440_044,
       isDownloadable: true,
       sortOrder: 0,
     })),
   );
+
+  for (const [index, { lesson }] of allLessons.entries()) {
+    seedObjects.push({
+      tenantId,
+      key: `t/${tenantId}/lessons/${lesson.id}/audio.wav`,
+      // Walking up a scale, so consecutive lessons are audibly different and
+      // "did the right one start playing" is answerable by ear.
+      pitchHz: 220 + index * 20,
+    });
+  }
 
   const adminUser = userByKey(tenant, 'admin');
 
@@ -418,6 +450,22 @@ async function seedTenant(tenant: SeedTenant): Promise<void> {
         createdAt: daysFromNow(-45),
       });
     }
+  }
+
+  // A position for the person who studies at both institutes, on the same
+  // course slug at each. Two rows, different numbers, and the primary key
+  // includes tenant_id so they coexist: a read that lost its tenant filter
+  // would show one institute how far this person got at the other.
+  const sharedCourse = courseBySlug(tenant, 'old-testament-survey');
+  const sharedLesson = sharedCourse.modules[0]?.lessons[1];
+  if (sharedLesson) {
+    await db.insert(progress).values({
+      tenantId,
+      userId: SHARED_STUDENT.id,
+      lessonId: sharedLesson.id,
+      positionSeconds: tenant.slug === 'grace' ? 412 : 77,
+      updatedAt: daysFromNow(-1),
+    });
   }
 
   // Partial playback, so resume has something to read back.
