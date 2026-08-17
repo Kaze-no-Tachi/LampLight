@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
-import { courses, enrollments, products } from '@/db/schema';
+import { hasActiveEntitlement } from '@/db/repositories/entitlements';
+import { courses, products } from '@/db/schema';
 import type { TenantScope } from '@/db/scope';
 import {
   decideCourseAuthoring,
@@ -175,20 +176,17 @@ export async function can(
 
       // Already on it is not a failure, but it is not an enrolment either, and
       // the caller needs to tell the difference to render the right button.
-      const [existing] = await scope.tx
-        .select({ id: enrollments.id })
-        .from(enrollments)
-        .where(
-          and(
-            eq(enrollments.tenantId, scope.tenantId),
-            eq(enrollments.userId, actor.userId),
-            eq(enrollments.sourceKind, 'course'),
-            eq(enrollments.sourceId, resource.id),
-          ),
-        )
-        .limit(1);
+      // Through hasActiveEntitlement rather than a direct-course lookup, so a
+      // student covered by a program that contains this course reads as
+      // already entitled instead of being offered a second, redundant direct
+      // enrolment for a course they can already open.
+      const entitled = await hasActiveEntitlement(
+        scope,
+        actor.userId,
+        resource.id,
+      );
 
-      return existing
+      return entitled
         ? { allowed: false, reason: 'already-enrolled' }
         : { allowed: true, reason: 'published-course' };
     }

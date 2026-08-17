@@ -63,8 +63,8 @@ export default async function AccountPage() {
         {courses.length === 0 ? (
           <p className="text-muted-foreground">
             Nothing yet.{' '}
-            <Link href="/courses" className="underline underline-offset-4">
-              Have a look at the catalog
+            <Link href="/catalogue" className="underline underline-offset-4">
+              Have a look at the catalogue
             </Link>
             , or ask the office to enrol you.
           </p>
@@ -77,7 +77,7 @@ export default async function AccountPage() {
               >
                 <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                   <Link
-                    href={`/courses/${course.slug}`}
+                    href={`/catalogue/${course.slug}`}
                     className="font-medium underline-offset-4 hover:underline"
                   >
                     {course.title}

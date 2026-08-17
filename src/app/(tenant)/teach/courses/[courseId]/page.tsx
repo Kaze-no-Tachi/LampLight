@@ -110,7 +110,7 @@ export default async function EditCoursePage({
           {data.course.title}
         </h1>
         <Link
-          href={`/courses/${data.course.slug}`}
+          href={`/catalogue/${data.course.slug}`}
           className="text-muted-foreground text-sm underline underline-offset-4"
         >
           See what students see

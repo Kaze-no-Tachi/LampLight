@@ -204,6 +204,100 @@ export async function revokeEnrollment(params: {
   });
 }
 
+export type SelfEnrollOutcome =
+  | { status: 'enrolled'; enrollmentId: string }
+  | { status: 'already' }
+  | { status: 'error'; message: string };
+
+export type SelfEnrollRequest = {
+  readonly tenantId: string;
+  readonly userId: string;
+  readonly courseId: string;
+};
+
+/**
+ * A member putting themselves on a published course (round 2 of the course
+ * and lesson flow: "enroll works on any published course, ignoring price").
+ *
+ * Deliberately not grantEnrollment with the actor set to themselves.
+ * `grantedBy` stays null here, which is what the rest of the product reads as
+ * "purchased" rather than "granted by staff": the profile page and the access
+ * panel both switch on it. Setting it to the caller's own id would misreport a
+ * self-service enrolment as an admin's decision, when no admin was involved.
+ * Payments are not built yet, so this is the whole purchase for now, taken
+ * knowingly, revisited when Phase 11 lands.
+ *
+ * Callers must have already asked `can(scope, actor, 'course:enroll', ...)`,
+ * which is where published, archived and already-enrolled are decided. This
+ * still re-checks that the course exists here and re-does the duplicate
+ * check, because a server action is a public endpoint and the predicate call
+ * is the caller's responsibility, not a guarantee this function can lean on.
+ * A membership check is not repeated: unlike an admin's grant, `userId` here
+ * is always the caller's own session-derived id, never a value typed into a
+ * form, so there is no "type any id on the platform" risk to guard against.
+ */
+export async function enrollSelf(
+  request: SelfEnrollRequest,
+): Promise<SelfEnrollOutcome> {
+  return getTenantDb(request.tenantId).run(async (scope) => {
+    if (!(await sourceExists(scope, 'course', request.courseId))) {
+      return {
+        status: 'error' as const,
+        message: 'That course does not exist here.',
+      };
+    }
+
+    const existing = await scope.tx
+      .select({ id: enrollments.id })
+      .from(enrollments)
+      .where(
+        and(
+          eq(enrollments.tenantId, scope.tenantId),
+          eq(enrollments.userId, request.userId),
+          eq(enrollments.sourceKind, 'course'),
+          eq(enrollments.sourceId, request.courseId),
+        ),
+      )
+      .limit(1);
+
+    if (existing.length > 0) return { status: 'already' as const };
+
+    const [inserted] = await scope.tx
+      .insert(enrollments)
+      .values({
+        tenantId: scope.tenantId,
+        userId: request.userId,
+        sourceKind: 'course',
+        sourceId: request.courseId,
+        expiresAt: null,
+        grantedBy: null,
+      })
+      .returning({ id: enrollments.id });
+
+    if (!inserted) {
+      return {
+        status: 'error' as const,
+        message: 'The enrolment did not save.',
+      };
+    }
+
+    await scope.tx.insert(auditLog).values({
+      tenantId: scope.tenantId,
+      actorUserId: request.userId,
+      action: 'enrollment.self_enrolled',
+      targetType: 'enrollment',
+      targetId: inserted.id,
+      metadataJson: {
+        userId: request.userId,
+        sourceKind: 'course',
+        sourceId: request.courseId,
+      },
+    });
+
+    return { status: 'enrolled' as const, enrollmentId: inserted.id };
+  });
+}
+
 async function sourceExists(
   scope: TenantScope,
   kind: 'program' | 'course',

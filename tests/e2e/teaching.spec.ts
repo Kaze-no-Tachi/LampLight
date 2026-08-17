@@ -85,7 +85,7 @@ async function openCourseEditor(page: Page): Promise<string> {
   const href = await page
     .getByRole('link', { name: /see what students see/i })
     .getAttribute('href');
-  return href ?? '/courses';
+  return href ?? '/catalogue';
 }
 
 test.describe('an instructor changing a course', () => {
@@ -250,9 +250,14 @@ test.describe('who may teach', () => {
     const titles = await page.locator('h2').allTextContents();
     expect(titles.join(' ')).not.toContain('Pastoral Ministry');
 
-    const catalog = await request.get('/courses/pastoral-ministry', {
+    // Church History, not Pastoral Ministry: this instructor is not assigned
+    // to either, but Pastoral Ministry is also seeded unpublished, which would
+    // confound "not assigned" with "not published". Church History is
+    // published, so a 200 here proves assignment does not gate public
+    // visibility, the thing this test is actually about.
+    const catalogue = await request.get('/catalogue/church-history', {
       headers: { host: GRACE_HOST },
     });
-    expect(catalog.status(), 'the course itself is public').toBe(200);
+    expect(catalogue.status(), 'the course itself is public').toBe(200);
   });
 });

@@ -23,7 +23,7 @@ import {
  */
 
 /** A course this student holds through the diploma program. */
-const COURSE = '/courses/old-testament-survey';
+const COURSE = '/catalogue/old-testament-survey';
 
 async function openFirstLesson(page: import('@playwright/test').Page) {
   await page.goto(url(GRACE_HOST, COURSE));
@@ -161,7 +161,7 @@ test.describe('playing a lecture', () => {
     // The classic version of this bug: a student types their congregation into
     // a form and every space bar jumps the audio.
     await signIn(page, PEOPLE.admin);
-    await page.goto(url(GRACE_HOST, '/courses/old-testament-survey'));
+    await page.goto(url(GRACE_HOST, '/catalogue/old-testament-survey'));
     const href = await page
       .locator('a[href^="/lessons/"]')
       .first()

@@ -47,7 +47,7 @@ test.describe('an admin building a catalogue', () => {
 
     // Unpublished means invisible, which is the half that is easy to get wrong.
     const visitor = await context.newPage();
-    await visitor.goto(url(GRACE_HOST, '/courses'));
+    await visitor.goto(url(GRACE_HOST, '/catalogue'));
     await expect(visitor.locator('main')).not.toContainText(NAME);
 
     await row.getByRole('button', { name: /^Publish$/ }).click();
@@ -188,7 +188,7 @@ test.describe('programs', () => {
     await expect(row).toContainText('not published');
 
     const visitor = await context.newPage();
-    await visitor.goto(url(GRACE_HOST, '/courses'));
+    await visitor.goto(url(GRACE_HOST, '/catalogue'));
     await expect(visitor.locator('main')).not.toContainText(title);
 
     await row.getByRole('button', { name: /^Publish$/ }).click();
@@ -288,7 +288,7 @@ test.describe('adding lessons', () => {
     await expect(page.getByText('Published.')).toBeVisible();
 
     const visitor = await context.newPage();
-    await visitor.goto(url(GRACE_HOST, '/courses'));
+    await visitor.goto(url(GRACE_HOST, '/catalogue'));
     await visitor.getByRole('link', { name: course }).first().click();
     await expect(visitor.locator('main')).toContainText(lesson);
   });
@@ -338,5 +338,116 @@ test.describe('your own account', () => {
     await page.getByRole('button', { name: /^Change password$/ }).click();
 
     await expect(page.getByText(/Check your current password/i)).toBeVisible();
+  });
+});
+
+test.describe('the student shelf and self-enrolment', () => {
+  // student1 holds old-testament-survey, new-testament-survey and
+  // systematic-theology-i through the diploma program (seed), and neither
+  // church-history nor hermeneutics. Two different unheld courses, so the
+  // enrolling test and the signed-out test cannot interfere with each other.
+  const UNHELD_ENROLLABLE = 'church-history';
+  const UNHELD_FOR_VISITOR = 'hermeneutics';
+  const HELD_VIA_PROGRAM = 'old-testament-survey';
+
+  test('enrols from the catalogue, and the course appears on the shelf', async ({
+    page,
+  }) => {
+    await signIn(page, PEOPLE.student);
+    await page.goto(url(GRACE_HOST, `/catalogue/${UNHELD_ENROLLABLE}`));
+
+    await expect(page.getByRole('button', { name: /^Enrol$/ })).toBeVisible();
+
+    await page.getByRole('button', { name: /^Enrol$/ }).click();
+    await expect(
+      page.getByText(/you are enrolled in this course/i),
+    ).toBeVisible();
+
+    await page.goto(url(GRACE_HOST, '/courses'));
+    const row = page.locator('li', { hasText: 'Church History' });
+    await expect(row).toBeVisible();
+    // No progress yet, so the shelf offers Start rather than Continue.
+    await expect(row.getByRole('link', { name: /^Start$/ })).toBeVisible();
+
+    // Cleanup, through the admin path this suite already trusts: an
+    // unrevoked enrolment here would make a second run of this test find the
+    // Enrol button already gone.
+    await signIn(page, PEOPLE.admin);
+    await page.goto(url(GRACE_HOST, '/settings/people'));
+    await page.getByRole('link', { name: /First Student/ }).click();
+    await page.waitForURL('**/settings/people/**');
+    await page
+      .locator('li', { hasText: 'Church History' })
+      .getByRole('button', { name: /remove/i })
+      .click();
+    await expect(page.getByText('Access removed.')).toBeVisible();
+  });
+
+  test('a course already held offers no enrol button', async ({ page }) => {
+    await signIn(page, PEOPLE.student);
+    await page.goto(url(GRACE_HOST, `/catalogue/${HELD_VIA_PROGRAM}`));
+
+    await expect(
+      page.getByText(/you are enrolled in this course/i),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Enrol$/ })).toHaveCount(0);
+  });
+
+  test('prompts sign in when signed out, and returns to the same course', async ({
+    page,
+  }) => {
+    await page.goto(url(GRACE_HOST, `/catalogue/${UNHELD_FOR_VISITOR}`));
+
+    const link = page.getByRole('link', { name: /sign in to enrol/i });
+    await expect(link).toBeVisible();
+    expect(await link.getAttribute('href')).toBe(
+      `/sign-in?next=%2Fcatalogue%2F${UNHELD_FOR_VISITOR}`,
+    );
+
+    await link.click();
+    await page.locator('input[name=email]').fill(PEOPLE.student);
+    await page.locator('input[name=password]').fill(SEED_PASSWORD);
+    await page.getByRole('button', { name: /sign in/i }).click();
+
+    await page.waitForURL(`**/catalogue/${UNHELD_FOR_VISITOR}`, {
+      timeout: 15_000,
+    });
+    // Landed back on the course, now as somebody who may enrol in it.
+    await expect(page.getByRole('button', { name: /^Enrol$/ })).toBeVisible();
+  });
+
+  test('the shelf shows a held course and its program alongside it', async ({
+    page,
+  }) => {
+    // The seed's progress row for student1 sits on old-testament-survey's
+    // second lesson, deliberately not its first (see src/db/seed.ts), which
+    // exists to prove a gated lesson's position survives, not to change what
+    // the shelf offers. "Next" is still the first lesson in teaching order
+    // that carries no completedAt, which is the untouched first lesson, so
+    // this reads Start rather than Continue: the label ternary itself is one
+    // line off a field the isolation harness already covers, and player.spec
+    // already drives real playback and position sync.
+    await signIn(page, PEOPLE.student);
+    await page.goto(url(GRACE_HOST, '/courses'));
+
+    // The course title also appears inside the program card below, once as
+    // its own summary and once in the program's per-course breakdown; only
+    // the shelf's own course row carries the "lessons" count and a Start
+    // link, which is what tells the three apart.
+    const row = page
+      .locator('li', { hasText: 'Old Testament Survey' })
+      .filter({ hasText: 'lessons' });
+    await expect(row).toBeVisible();
+    await expect(row.getByRole('link', { name: /^Start$/ })).toBeVisible();
+
+    // The diploma program this course belongs to gets its own summary too.
+    // Every one of its three courses also names the program on its own shelf
+    // row ("Via Diploma in Biblical Studies"), so the percent sign is what
+    // singles out the program's own card: no per-course row shows one.
+    const program = page
+      .locator('li', { hasText: 'Diploma in Biblical Studies' })
+      .filter({ hasText: '%' });
+    await expect(program).toBeVisible();
+    await expect(program).toContainText('0%');
   });
 });

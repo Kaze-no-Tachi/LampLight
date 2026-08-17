@@ -42,7 +42,7 @@ export default async function TenantHome() {
         </p>
         <div className="mt-2 flex flex-wrap gap-3">
           <Link
-            href="/courses"
+            href="/catalogue"
             className="bg-primary text-primary-foreground rounded-(--radius) px-4 py-2 text-sm font-medium"
           >
             Browse courses
@@ -81,7 +81,7 @@ export default async function TenantHome() {
         <section className="flex flex-col gap-4">
           <div className="flex items-baseline justify-between gap-4">
             <h2 className="text-xl font-semibold tracking-tight">Courses</h2>
-            <Link href="/courses" className="text-sm hover:underline">
+            <Link href="/catalogue" className="text-sm hover:underline">
               See all {courses.length}
             </Link>
           </div>
@@ -93,7 +93,10 @@ export default async function TenantHome() {
                 key={course.id}
                 className="bg-card border-border rounded-(--radius) border p-5"
               >
-                <Link href={`/courses/${course.slug}`} className="font-medium">
+                <Link
+                  href={`/catalogue/${course.slug}`}
+                  className="font-medium"
+                >
                   {course.title}
                 </Link>
               </li>

@@ -58,8 +58,10 @@ export default async function LessonPage({
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 p-8">
       <header className="flex flex-col gap-2">
+        {/* Back to the course rather than the shelf: this link also reaches a
+            free-preview listener with no shelf to go back to. */}
         <Link
-          href="/courses"
+          href={`/catalogue/${lesson.courseSlug}`}
           className="text-muted-foreground text-sm underline-offset-4 hover:underline"
         >
           {tenant.name}

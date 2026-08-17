@@ -119,7 +119,7 @@ export async function setPublishedAction(
   }
 
   revalidatePath('/settings/catalog');
-  revalidatePath('/courses');
+  revalidatePath('/catalogue', 'layout');
   return {
     status: 'ok',
     message: publish ? 'Published.' : 'Withdrawn from the catalogue.',
@@ -154,7 +154,7 @@ export async function setProgramPublishedAction(
   }
 
   revalidatePath('/settings/catalog');
-  revalidatePath('/courses');
+  revalidatePath('/catalogue', 'layout');
   return {
     status: 'ok',
     message: publish ? 'Published.' : 'Withdrawn from the catalogue.',

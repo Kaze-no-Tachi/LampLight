@@ -76,7 +76,13 @@ export function SiteHeader({
           <Wordmark branding={branding} />
         </Link>
 
-        <Link href="/courses" className="text-sm hover:underline">
+        {/* /courses is the shelf, gated on a membership; a visitor or a
+            session with no standing here has nothing to shelve, so they go to
+            the public catalogue instead. */}
+        <Link
+          href={viewer ? '/courses' : '/catalogue'}
+          className="text-sm hover:underline"
+        >
           Courses
         </Link>
 

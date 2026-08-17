@@ -153,7 +153,7 @@ export function CourseRow({
       <div className="flex flex-wrap items-baseline gap-2">
         <h3 className="font-medium">{course.title}</h3>
         <span className="text-muted-foreground font-mono text-xs">
-          /courses/{course.slug}
+          /catalogue/{course.slug}
         </span>
         <span
           className={

@@ -358,6 +358,7 @@ async function seedTenant(tenant: SeedTenant): Promise<void> {
       contentMd: `Lecture notes for ${lesson.title}.`,
       durationSeconds: lesson.durationSeconds,
       isFreePreview: lesson.isFreePreview,
+      isPublished: lesson.isPublished,
       sortOrder: lesson.sortOrder,
     })),
   );

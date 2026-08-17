@@ -3,11 +3,13 @@ import { notFound } from 'next/navigation';
 import { getTenantDb } from '@/db/client';
 import { findCourseBySlug } from '@/db/repositories/catalog';
 import { listLessonsForCourse } from '@/db/repositories/lessons';
+import { can } from '@/lib/access/can';
 import { issueCourseDocuments } from '@/lib/access/media';
 import { decideLessonAccess } from '@/lib/access/predicate';
-import { getSessionUser } from '@/lib/auth/guards';
+import { getSessionUser, getViewer } from '@/lib/auth/guards';
 import { Markdown } from '@/lib/markdown/render';
 import { requireTenant } from '@/lib/tenancy/context';
+import { EnrollButton } from './enroll-button';
 
 /**
  * One course, with its lessons and whether this viewer may hear each one.
@@ -34,6 +36,11 @@ export default async function CoursePage({
   const tenant = await requireTenant();
   const { slug } = await params;
   const user = await getSessionUser();
+  // Separate from `user`: a session can exist with no standing at this
+  // institute (signed in at one institute, visiting another's domain), and
+  // enrolling requires a membership here, not merely an account somewhere on
+  // the platform.
+  const viewer = await getViewer();
 
   const view = await getTenantDb(tenant.id).run(async (scope) => {
     const course = await findCourseBySlug(scope, slug);
@@ -54,7 +61,20 @@ export default async function CoursePage({
       });
     }
 
-    return { course, lessons: rows };
+    const enrollVerdict = viewer
+      ? await can(
+          scope,
+          {
+            tenantId: viewer.tenant.id,
+            userId: viewer.userId,
+            role: viewer.role,
+          },
+          'course:enroll',
+          { kind: 'course', id: course.id },
+        )
+      : null;
+
+    return { course, lessons: rows, enrollVerdict };
   });
 
   // A course that is not published, or belongs to another institute, is not
@@ -79,11 +99,19 @@ export default async function CoursePage({
     { enrolled },
   );
 
+  const enrollState = !viewer
+    ? ('signed-out' as const)
+    : view.enrollVerdict?.allowed
+      ? ('can-enroll' as const)
+      : view.enrollVerdict?.reason === 'already-enrolled'
+        ? ('already-enrolled' as const)
+        : null;
+
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 p-8">
       <header className="flex flex-col gap-2">
         <Link
-          href="/courses"
+          href="/catalogue"
           className="text-muted-foreground text-sm underline-offset-4 hover:underline"
         >
           {tenant.name}
@@ -95,6 +123,14 @@ export default async function CoursePage({
           {view.lessons.length} lessons, {openCount} open to you
         </p>
       </header>
+
+      {enrollState && (
+        <EnrollButton
+          slug={slug}
+          courseId={view.course.id}
+          state={enrollState}
+        />
+      )}
 
       {view.course.descriptionMd && (
         <section className="text-muted-foreground flex flex-col gap-3">
@@ -150,9 +186,10 @@ export default async function CoursePage({
                   {lesson.title}
                 </Link>
               ) : (
-                // Locked lessons still show their title. The catalog is public
-                // and the titles are how somebody decides whether to enrol; it
-                // is the audio that is gated, and that is gated at issuance.
+                // Locked lessons still show their title. The catalogue is
+                // public and the titles are how somebody decides whether to
+                // enrol; it is the audio that is gated, and that is gated at
+                // issuance.
                 <span className="text-muted-foreground">{lesson.title}</span>
               )}
             </span>
