@@ -2,7 +2,12 @@
 
 import Link from 'next/link';
 import { useRef, useState, useTransition } from 'react';
-import { checkUpload, formatBytes } from '@/lib/media/uploads';
+import {
+  checkUpload,
+  formatBytes,
+  uploadWithProgress,
+} from '@/lib/media/uploads';
+import { FreePreviewBadge } from '../lesson-list';
 import {
   completeUploadAction,
   removeResourceAction,
@@ -83,7 +88,12 @@ export function LessonRow({
     }
 
     try {
-      await put(ticket.uploadUrl, ticket.contentType, file, setProgress);
+      await uploadWithProgress(
+        ticket.uploadUrl,
+        ticket.contentType,
+        file,
+        setProgress,
+      );
     } catch (error) {
       onError(
         error instanceof Error ? error.message : 'The upload did not finish.',
@@ -129,11 +139,7 @@ export function LessonRow({
         ) : (
           <span>{lesson.title}</span>
         )}
-        {lesson.isFreePreview && (
-          <span className="text-muted-foreground rounded-full border px-2 py-0.5 text-xs">
-            Free preview
-          </span>
-        )}
+        {lesson.isFreePreview && <FreePreviewBadge />}
 
         <label className="text-muted-foreground ml-auto cursor-pointer text-xs underline">
           {phase === 'sending'
@@ -189,49 +195,6 @@ function formDataOf(values: Record<string, string>): FormData {
   const data = new FormData();
   for (const [key, value] of Object.entries(values)) data.set(key, value);
   return data;
-}
-
-/**
- * Sends the file, reporting progress.
- *
- * XMLHttpRequest rather than fetch, and this is the one place in the codebase
- * that reaches for it: fetch cannot report upload progress, and an instructor
- * sending a 200 MB lecture over a rural connection needs to see that something
- * is happening. A silent five minute wait gets cancelled and retried, which
- * makes it a ten minute wait.
- */
-function put(
-  url: string,
-  contentType: string,
-  file: File,
-  onProgress: (percent: number) => void,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const request = new XMLHttpRequest();
-    request.open('PUT', url);
-    // Has to match what was signed, or the bucket rejects the signature rather
-    // than the file, and the error reads like a permissions problem.
-    request.setRequestHeader('content-type', contentType);
-
-    request.upload.addEventListener('progress', (event) => {
-      if (event.lengthComputable) {
-        onProgress(Math.round((event.loaded / event.total) * 100));
-      }
-    });
-
-    request.addEventListener('load', () => {
-      if (request.status >= 200 && request.status < 300) resolve();
-      else reject(new Error(`The bucket answered ${request.status}.`));
-    });
-    request.addEventListener('error', () =>
-      reject(new Error('The connection dropped during the upload.')),
-    );
-    request.addEventListener('abort', () =>
-      reject(new Error('The upload was cancelled.')),
-    );
-
-    request.send(file);
-  });
 }
 
 /**

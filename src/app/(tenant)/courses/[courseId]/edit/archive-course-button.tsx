@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { archiveCourseAction } from '../../../settings/catalog/actions';
+import { archiveCourseAction } from '../../../teach/catalog-actions';
 
 /**
  * The one-way door. Shown to admins only: whether the course still exists is

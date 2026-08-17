@@ -16,7 +16,11 @@ import {
 } from '@/lib/catalog/authoring';
 
 /**
- * Catalogue authoring, admin only.
+ * Catalogue authoring, admin only. Moved here from
+ * settings/catalog/actions.ts (round 2, chunk 5): deciding a course or
+ * program exists, who teaches it, and whether students can see it now lives
+ * on /teach alongside everything else staff does, rather than under a
+ * separate settings page nobody but an admin ever had reason to visit.
  *
  * Every one of these is a public endpoint that happens to be called from a
  * page, so the tenant comes from requireRole, which reads the resolved Host
@@ -62,7 +66,6 @@ export async function createCourseAction(
 
   if (result.status === 'error') return result;
 
-  revalidatePath('/settings/catalog');
   revalidatePath('/teach');
   return { status: 'ok', courseId: result.id };
 }
@@ -98,7 +101,6 @@ export async function archiveCourseAction(
     return { status: 'error', message: 'That course no longer exists.' };
   }
 
-  revalidatePath('/settings/catalog');
   revalidatePath('/teach');
   revalidatePath('/courses', 'layout');
   revalidatePath('/catalogue', 'layout');
@@ -132,7 +134,7 @@ export async function createProgramAction(
 
   if (result.status === 'error') return result;
 
-  revalidatePath('/settings/catalog');
+  revalidatePath('/teach');
   return { status: 'ok', message: 'Program created. It is not published yet.' };
 }
 
@@ -165,7 +167,7 @@ export async function setPublishedAction(
     return { status: 'error', message: 'That course no longer exists.' };
   }
 
-  revalidatePath('/settings/catalog');
+  revalidatePath('/teach');
   revalidatePath('/catalogue', 'layout');
   return {
     status: 'ok',
@@ -200,7 +202,7 @@ export async function setProgramPublishedAction(
     return { status: 'error', message: 'That program no longer exists.' };
   }
 
-  revalidatePath('/settings/catalog');
+  revalidatePath('/teach');
   revalidatePath('/catalogue', 'layout');
   return {
     status: 'ok',
@@ -244,7 +246,6 @@ export async function assignInstructorAction(
     case 'already':
       return { status: 'ok', message: 'They were already assigned.' };
     default:
-      revalidatePath('/settings/catalog');
       revalidatePath('/teach');
       return { status: 'ok', message: 'Assigned.' };
   }
@@ -268,7 +269,6 @@ export async function removeInstructorAction(
     });
   });
 
-  revalidatePath('/settings/catalog');
   revalidatePath('/teach');
   return { status: 'ok', message: 'Removed.' };
 }
@@ -288,6 +288,6 @@ export async function setProgramCoursesAction(
     return { status: 'error', message: 'That program no longer exists.' };
   }
 
-  revalidatePath('/settings/catalog');
+  revalidatePath('/teach');
   return { status: 'ok', message: 'Saved.' };
 }

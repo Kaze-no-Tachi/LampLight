@@ -94,7 +94,6 @@ export async function updateCourseAction(
   if (!done) return DENIED;
 
   revalidatePath('/teach');
-  revalidatePath(`/teach/courses/${courseId}`);
   revalidatePath(`/courses/${courseId}/edit`);
   // The catalog and the course page both read this.
   revalidatePath('/catalogue', 'layout');
@@ -358,7 +357,6 @@ export async function addCourseLinkAction(
 
   if (!done) return DENIED;
 
-  revalidatePath(`/teach/courses/${courseId}`);
   revalidatePath(`/courses/${courseId}/edit`);
   revalidatePath('/catalogue', 'layout');
   return { status: 'ok' };
@@ -456,7 +454,6 @@ function readTarget(formData: FormData): AttachmentTarget | null {
 
 function revalidateFor(target: AttachmentTarget): void {
   if (target.kind === 'course') {
-    revalidatePath(`/teach/courses/${target.id}`);
     revalidatePath(`/courses/${target.id}/edit`);
     revalidatePath('/catalogue', 'layout');
     return;

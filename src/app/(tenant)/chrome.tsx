@@ -100,7 +100,7 @@ export function SiteHeader({
             screen nobody can navigate to may as well not exist. */}
         {viewer?.role === 'admin' ? (
           <>
-            <Link href="/settings/catalog" className="text-sm hover:underline">
+            <Link href="/catalogue" className="text-sm hover:underline">
               Catalogue
             </Link>
             <Link href="/settings/people" className="text-sm hover:underline">
@@ -113,7 +113,7 @@ export function SiteHeader({
               Domains
             </Link>
             <Link href="/settings/signup" className="text-sm hover:underline">
-              Signup
+              Signup settings
             </Link>
           </>
         ) : null}

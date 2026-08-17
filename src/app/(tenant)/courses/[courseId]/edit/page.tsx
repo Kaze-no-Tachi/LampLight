@@ -19,9 +19,8 @@ import { CourseEditor } from './course-editor';
  * and every one of its lessons, in the place a course is created and the
  * place it is worked on afterwards.
  *
- * Replaces `/teach/courses/[courseId]`, which stays reachable until `/teach`
- * itself stops linking to it (chunk 4) and it is deleted (chunk 5): nothing
- * here removes it, this page is simply where the primary path now leads.
+ * Replaces `/teach/courses/[courseId]`, which round 2 chunk 5 deleted once
+ * nothing linked to it any more. This is the only place a course gets edited.
  *
  * The predicate decides, not the route. An instructor who types a course id
  * they are not assigned to, or an id that is archived, gets the same 404 as

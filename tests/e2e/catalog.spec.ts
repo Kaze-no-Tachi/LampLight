@@ -26,7 +26,7 @@ const NAME = `Church History ${Date.now()}`;
 const SLUG_HINT = 'input[placeholder*="Web address"]';
 
 async function openCatalog(page: import('@playwright/test').Page) {
-  await page.goto(url(GRACE_HOST, '/settings/catalog'));
+  await page.goto(url(GRACE_HOST, '/teach'));
 }
 
 test.describe('an admin building a catalogue', () => {
@@ -48,9 +48,13 @@ test.describe('an admin building a catalogue', () => {
     ).toBeVisible();
 
     await openCatalog(page);
-    const row = page.locator('li', { hasText: NAME }).first();
+    const row = page
+      .locator('[data-testid="course-card"]', {
+        hasText: NAME,
+      })
+      .first();
     await expect(row).toContainText('not published');
-    await expect(row).toContainText('0 lessons');
+    await expect(row).toContainText('No lessons yet');
 
     // Unpublished means invisible, which is the half that is easy to get wrong.
     const visitor = await context.newPage();
@@ -66,7 +70,7 @@ test.describe('an admin building a catalogue', () => {
     // And withdrawing takes it back out, which is the half everybody forgets.
     await page.reload();
     await page
-      .locator('li', { hasText: NAME })
+      .locator('[data-testid="course-card"]', { hasText: NAME })
       .first()
       .getByRole('button', { name: /^Withdraw$/ })
       .click();
@@ -104,7 +108,11 @@ test.describe('an admin building a catalogue', () => {
     await page.waitForURL('**/courses/**/edit');
 
     await openCatalog(page);
-    const row = page.locator('li', { hasText: title }).first();
+    const row = page
+      .locator('[data-testid="course-card"]', {
+        hasText: title,
+      })
+      .first();
     await expect(row).toContainText('Nobody yet');
 
     // By value rather than label: the option reads "Name (email)" and
@@ -129,13 +137,20 @@ test.describe('an admin building a catalogue', () => {
     await theirs.close();
   });
 
-  test('is not something an instructor can reach', async ({ page }) => {
+  test('is not usable by an instructor', async ({ page }) => {
     // Deciding what the institute teaches, and who teaches it, is not an
-    // instructor's call even though editing the content is.
+    // instructor's call even though editing the content is: the same /teach
+    // page an instructor reaches shows none of the catalogue controls that
+    // used to live on their own settings page.
     await signIn(page, PEOPLE.instructor);
+    await page.goto(url(GRACE_HOST, '/teach'));
 
-    const response = await page.goto(url(GRACE_HOST, '/settings/catalog'));
-    expect(response?.status()).toBe(404);
+    await expect(
+      page.getByRole('button', { name: /create course/i }),
+    ).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Publish$/ })).toHaveCount(
+      0,
+    );
   });
 });
 
@@ -148,11 +163,11 @@ test.describe('every admin screen is reachable', () => {
     await page.goto(url(GRACE_HOST, '/account'));
 
     for (const [label, path] of [
-      ['Catalogue', '/settings/catalog'],
+      ['Catalogue', '/catalogue'],
       ['People', '/settings/people'],
       ['Branding', '/settings/branding'],
       ['Domains', '/settings/domains'],
-      ['Signup', '/settings/signup'],
+      ['Signup settings', '/settings/signup'],
     ] as const) {
       const link = page.getByRole('link', { name: label, exact: true });
       await expect(link, `${label} should be in the header`).toBeVisible();
@@ -164,7 +179,7 @@ test.describe('every admin screen is reachable', () => {
     await signIn(page, PEOPLE.student);
     await page.goto(url(GRACE_HOST, '/account'));
 
-    for (const label of ['Catalogue', 'Domains', 'Signup'] as const) {
+    for (const label of ['Catalogue', 'Domains', 'Signup settings'] as const) {
       await expect(
         page.getByRole('link', { name: label, exact: true }),
       ).toHaveCount(0);
@@ -294,7 +309,7 @@ test.describe('adding lessons', () => {
     // which is the whole chain: created, listed, visible.
     await openCatalog(page);
     await page
-      .locator('li', { hasText: course })
+      .locator('[data-testid="course-card"]', { hasText: course })
       .first()
       .getByRole('button', { name: /^Publish$/ })
       .click();

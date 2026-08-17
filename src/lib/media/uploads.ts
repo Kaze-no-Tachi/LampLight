@@ -138,3 +138,50 @@ export function readDuration(value: unknown): number | null {
   }
   return Math.round(value);
 }
+
+/**
+ * Sends a file straight to a presigned URL, reporting progress as it goes.
+ *
+ * XMLHttpRequest rather than fetch, and this is the one place in the codebase
+ * that reaches for it: fetch cannot report upload progress, and somebody
+ * sending a large recording over a slow connection needs to see that
+ * something is happening. A silent multi-minute wait gets cancelled and
+ * retried, which turns a five minute wait into a ten minute one.
+ *
+ * Round 2, chunk 5: this used to exist twice, once for lesson audio
+ * (teach/lesson-row.tsx) and once for course and lesson documents
+ * (teach/attachments.tsx), byte-for-byte identical except for its name.
+ */
+export function uploadWithProgress(
+  url: string,
+  contentType: string,
+  file: File,
+  onProgress: (percent: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('PUT', url);
+    // Has to match what was signed, or the bucket rejects the signature rather
+    // than the file, and the error reads like a permissions problem.
+    request.setRequestHeader('content-type', contentType);
+
+    request.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    });
+
+    request.addEventListener('load', () => {
+      if (request.status >= 200 && request.status < 300) resolve();
+      else reject(new Error(`The bucket answered ${request.status}.`));
+    });
+    request.addEventListener('error', () =>
+      reject(new Error('The connection dropped during the upload.')),
+    );
+    request.addEventListener('abort', () =>
+      reject(new Error('The upload was cancelled.')),
+    );
+
+    request.send(file);
+  });
+}

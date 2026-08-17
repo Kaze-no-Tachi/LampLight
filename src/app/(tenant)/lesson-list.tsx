@@ -33,7 +33,8 @@ function formatDuration(seconds: number | null): string {
   return `${minutes} min`;
 }
 
-function FreePreviewBadge() {
+/** Shared with teach/lesson-row.tsx (round 2, chunk 5). */
+export function FreePreviewBadge() {
   return (
     <span className="text-muted-foreground rounded-full border px-2 py-0.5 text-xs">
       Free preview
