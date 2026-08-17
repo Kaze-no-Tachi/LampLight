@@ -88,9 +88,14 @@ export function SiteHeader({
         ) : null}
 
         {viewer?.role === 'admin' ? (
-          <Link href="/settings/branding" className="text-sm hover:underline">
-            Settings
-          </Link>
+          <>
+            <Link href="/settings/people" className="text-sm hover:underline">
+              People
+            </Link>
+            <Link href="/settings/branding" className="text-sm hover:underline">
+              Settings
+            </Link>
+          </>
         ) : null}
 
         {viewer ? (

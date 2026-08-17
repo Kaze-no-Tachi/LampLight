@@ -145,3 +145,40 @@ export function adminInviteEmail(params: {
 function formatExpiry(when: Date): string {
   return `${when.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
 }
+
+/**
+ * Sent when an institute admin invites somebody who has not asked to join.
+ *
+ * Different from activationEmail in one way that matters: the recipient did not
+ * fill in a form, so the message has to say who invited them and why they are
+ * hearing from us at all. An unexplained link asking for a password is
+ * indistinguishable from a phishing attempt, and a bible institute's students
+ * are exactly the audience that should be suspicious of one.
+ */
+export function invitationEmail(params: {
+  to: string;
+  instituteName: string;
+  url: string;
+  expiresAt: Date;
+  role: 'student' | 'admin';
+}): MailMessage {
+  const standing =
+    params.role === 'admin'
+      ? 'You have been invited to help administer'
+      : 'You have been invited to study at';
+
+  return {
+    to: params.to,
+    subject: `${params.instituteName} has invited you`,
+    text:
+      'Hello,\n\n' +
+      `${standing} ${params.instituteName} on Lamplight. Open the link below ` +
+      'to choose a password and finish setting up your account.\n\n' +
+      `${params.url}\n\n` +
+      `The link works once and stops working on ${formatExpiry(params.expiresAt)}.\n\n` +
+      'If you were not expecting this, somebody at the institute entered your ' +
+      'address. Nothing has been created, and ignoring this message leaves it ' +
+      'that way.' +
+      SIGNATURE(params.instituteName),
+  };
+}

@@ -6,6 +6,7 @@ import {
   memberships,
   programCourses,
   programs,
+  users,
 } from '@/db/schema';
 import type { TenantScope } from '@/db/scope';
 
@@ -326,4 +327,148 @@ function outranks(
   if (incumbent.expiresAt === null) return false;
   if (candidate.expiresAt === null) return true;
   return candidate.expiresAt > incumbent.expiresAt;
+}
+
+export type RosterEntry = {
+  userId: string;
+  email: string;
+  name: string;
+  role: 'student' | 'instructor' | 'admin';
+  joinedAt: Date;
+  /** How many entitlements this person holds here, expired ones included. */
+  enrollmentCount: number;
+};
+
+/**
+ * Everyone who belongs to this institute.
+ *
+ * Joins the global users table, which is the one place a tenant-scoped read
+ * touches global data, and it is safe for a specific reason: the set of rows is
+ * decided by memberships, which is tenant scoped, and the join only puts a name
+ * and an address on ids this institute already holds. It is not a way to browse
+ * the platform's users, because a user with no membership here never appears.
+ */
+export async function listRoster(scope: TenantScope): Promise<RosterEntry[]> {
+  const rows = await scope.tx
+    .select({
+      userId: memberships.userId,
+      email: users.email,
+      name: users.name,
+      role: memberships.role,
+      joinedAt: memberships.createdAt,
+      enrollmentCount: sql<number>`(
+        select count(*) from enrollments e
+        where e.tenant_id = ${scope.tenantId}
+          and e.user_id = ${memberships.userId}
+      )`,
+    })
+    .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(eq(memberships.tenantId, scope.tenantId))
+    .orderBy(asc(users.email));
+
+  return rows.map((row) => ({
+    ...row,
+    // count() comes back as a string from pg for bigint.
+    enrollmentCount: Number(row.enrollmentCount),
+  }));
+}
+
+export type GrantableSource = {
+  kind: 'program' | 'course';
+  id: string;
+  title: string;
+};
+
+/**
+ * Everything an admin can grant: this institute's programs and courses.
+ *
+ * Unpublished ones included, deliberately. An institute drafting a course still
+ * needs to be able to put a staff member or a pilot student into it, and
+ * publication is about whether strangers can buy it, not about who may be
+ * enrolled.
+ */
+export async function listGrantableSources(
+  scope: TenantScope,
+): Promise<GrantableSource[]> {
+  const programRows = await scope.tx
+    .select({ id: programs.id, title: programs.title })
+    .from(programs)
+    .where(eq(programs.tenantId, scope.tenantId))
+    .orderBy(asc(programs.title));
+
+  const courseRows = await scope.tx
+    .select({ id: courses.id, title: courses.title })
+    .from(courses)
+    .where(eq(courses.tenantId, scope.tenantId))
+    .orderBy(asc(courses.title));
+
+  return [
+    ...programRows.map((row) => ({ kind: 'program' as const, ...row })),
+    ...courseRows.map((row) => ({ kind: 'course' as const, ...row })),
+  ];
+}
+
+export type EnrollmentDetail = EnrollmentRecord & {
+  /** The program or course this entitlement covers, by name. */
+  sourceTitle: string;
+  grantedAt: Date;
+};
+
+/**
+ * The entitlements one person holds here, named, for the admin screen.
+ *
+ * Different from listEnrolledCourses, which expands a program into the courses
+ * it contains because that is what a student wants to see. An admin managing
+ * access needs the rows as granted, since those are what can be revoked.
+ */
+export async function listEnrollmentDetails(
+  scope: TenantScope,
+  userId: string,
+): Promise<EnrollmentDetail[]> {
+  const rows = await scope.tx
+    .select({
+      id: enrollments.id,
+      sourceKind: enrollments.sourceKind,
+      sourceId: enrollments.sourceId,
+      expiresAt: enrollments.expiresAt,
+      grantedBy: enrollments.grantedBy,
+      grantedAt: enrollments.grantedAt,
+      programTitle: programs.title,
+      courseTitle: courses.title,
+    })
+    .from(enrollments)
+    // Left joins, one per source kind, because source_id is a polymorphic
+    // reference: exactly one of these matches for any given row.
+    .leftJoin(
+      programs,
+      and(
+        eq(programs.tenantId, scope.tenantId),
+        eq(programs.id, enrollments.sourceId),
+      ),
+    )
+    .leftJoin(
+      courses,
+      and(
+        eq(courses.tenantId, scope.tenantId),
+        eq(courses.id, enrollments.sourceId),
+      ),
+    )
+    .where(
+      and(
+        eq(enrollments.tenantId, scope.tenantId),
+        eq(enrollments.userId, userId),
+      ),
+    )
+    .orderBy(asc(enrollments.grantedAt));
+
+  return rows.map((row) => ({
+    id: row.id,
+    sourceKind: row.sourceKind,
+    sourceId: row.sourceId,
+    expiresAt: row.expiresAt,
+    grantedBy: row.grantedBy,
+    grantedAt: row.grantedAt,
+    sourceTitle: row.programTitle ?? row.courseTitle ?? 'Removed',
+  }));
 }

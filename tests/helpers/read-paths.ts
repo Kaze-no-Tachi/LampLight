@@ -10,7 +10,10 @@ import {
   hasActiveEntitlement,
   isInstructorOf,
   listEnrolledCourses,
+  listEnrollmentDetails,
   listEnrollments,
+  listGrantableSources,
+  listRoster,
 } from '@/db/repositories/entitlements';
 import { findBranding, findSignupQuestions } from '@/db/repositories/settings';
 import {
@@ -272,6 +275,57 @@ export const READ_PATHS: ReadPath[] = [
       return ownedBySubject(
         rows.map((row) => row.courseId),
         courseIds(subject),
+      );
+    },
+  },
+  {
+    name: 'entitlements.listRoster',
+    async run(scope, subject) {
+      // Named by user id. The roster joins the global users table, so a missing
+      // tenant filter on memberships would turn an institute's own roster into
+      // a directory of everybody on the platform.
+      //
+      // The shared student is excluded, and that exclusion is the whole
+      // subtlety. They hold a membership at both institutes on purpose, so
+      // their id legitimately appears in both rosters, and counting it as
+      // "belonging to the subject" would report a correct roster as a leak.
+      const rows = await listRoster(scope);
+      const subjectUserIds = new Set(
+        Object.entries(subject.users)
+          .filter(([key]) => key !== 'shared')
+          .map(([, user]) => user.id),
+      );
+      return ownedBySubject(
+        rows.map((row) => row.userId),
+        subjectUserIds,
+      );
+    },
+  },
+  {
+    name: 'entitlements.listGrantableSources',
+    async run(scope, subject) {
+      const rows = await listGrantableSources(scope);
+      const subjectIds = new Set([
+        ...subject.courses.map((course) => course.id),
+        ...subject.programs.map((program) => program.id),
+      ]);
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        subjectIds,
+      );
+    },
+  },
+  {
+    name: 'entitlements.listEnrollmentDetails',
+    async run(scope, subject) {
+      const shared = userByKey(subject, 'shared');
+      const rows = await listEnrollmentDetails(scope, shared.id);
+      const subjectEnrollmentIds = new Set(
+        subject.enrollments.map((enrollment) => enrollment.id),
+      );
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        subjectEnrollmentIds,
       );
     },
   },
