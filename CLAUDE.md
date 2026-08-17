@@ -68,11 +68,13 @@ waits for `migrate` to exit successfully. The box exposes nothing but SSH, and
 ## Outstanding
 
 - `docs/plans/course-flow-round-2.md` is the live piece of work, with progress
-  marked. Chunks 1, 2a and 2b are done; chunk 3 (one editor at
-  `/courses/[courseId]/edit`) is next. Lessons still have no student-facing
-  publish gate: `is_published` exists and the shelf already reads it, but the
-  catalogue and lesson pages show a lesson regardless of it. That is chunk 3's
-  job, not a bug to chase before it.
+  marked. Chunks 1 through 3 are done; chunk 4 (`/teach` with the coming-soon
+  panels, replacing the inline role comparison with `can`) is next. `/teach`
+  itself still renders its old inline modules-and-lessons view
+  (`teach-course.tsx`, `lesson-row.tsx`) and still links to
+  `/teach/courses/[courseId]`; chunk 4 is what moves it to a summary plus
+  "Manage lessons" into the new editor, after which `/teach/courses/[courseId]`
+  and `/settings/catalog` are dead code chunk 5 deletes.
 - Roll the Cloudflare API token and the Brevo API key, both exposed in an
   earlier session transcript.
 - R2 bucket wants recreating in ENAM: it was made in APAC and location is fixed

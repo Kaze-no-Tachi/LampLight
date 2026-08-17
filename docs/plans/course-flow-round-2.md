@@ -73,7 +73,13 @@ first and then a `decide*` predicate. The one inline comparison is
       program-entitled student is not offered a redundant second enrolment,
       and published every seeded lesson so the shelf's seeded progress
       fixture is actually visible. Commit `13d5f60`.
-- [ ] **Chunk 3, one editor** at `/courses/[courseId]/edit`.
+- [x] **Chunk 3, one editor** at `/courses/[courseId]/edit`, one role-driven
+      `LessonList`, lesson publish/archive/reorder, course archive that
+      actually frees its slug (migration 0009). Along the way: closed the gap
+      where `is_published` gated nothing (`decideLessonAccess` now requires
+      it for free preview and entitlement, not for admin or the assigned
+      instructor), and fixed `decideCourseAuthoring` to hide an archived
+      course from its own author too. Commit `3c43b90`.
 - [ ] **Chunk 4, teach** with the coming-soon panels.
 - [ ] **Chunk 5, cleanup**: delete `/settings/catalog` and
       `/teach/courses/[courseId]`, rename the nav `Signup` link, collapse the
