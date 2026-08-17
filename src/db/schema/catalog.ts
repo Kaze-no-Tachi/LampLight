@@ -91,6 +91,14 @@ export const courses = pgTable(
     isStandalonePurchasable: boolean('is_standalone_purchasable')
       .notNull()
       .default(true),
+    /**
+     * Set when somebody removes a course. Archiving rather than deleting,
+     * because a course owns lessons, uploaded recordings, enrolments and every
+     * student's progress, and cascading all of that away on a misclick is not
+     * a thing anybody recovers from. An archived course disappears from every
+     * list and frees nothing but attention; its slug stays taken.
+     */
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { courseResources, courses, products, programs } from '@/db/schema';
 import type { TenantScope } from '@/db/scope';
 
@@ -50,14 +50,37 @@ export async function listPublishedCourses(
       ),
     )
     .where(
-      and(eq(courses.tenantId, scope.tenantId), eq(products.isPublished, true)),
+      and(
+        eq(courses.tenantId, scope.tenantId),
+        eq(products.isPublished, true),
+        isNull(courses.archivedAt),
+      ),
     )
     .orderBy(asc(courses.title));
 }
 
+/**
+ * One course by its address, for the public course page.
+ *
+ * THE LEAK THIS CLOSES. This used to filter on tenant and slug and nothing
+ * else, while the list query beside it filtered on published. So an
+ * unpublished course was not in the catalogue and was still reachable by
+ * typing its address: title, description, and every public course document
+ * rendered. Only the audio was protected, because that goes through the access
+ * predicate rather than through here. The page's own comment claimed an
+ * unpublished course was "not found", and it was not.
+ *
+ * The test that should have caught it checked the course was absent from the
+ * catalogue list and never tried the URL.
+ *
+ * `includeUnpublished` exists for the editor, which has to show an author
+ * their own draft, and every caller that passes it has already established the
+ * viewer may author the course.
+ */
 export async function findCourseBySlug(
   scope: TenantScope,
   slug: string,
+  options: { includeUnpublished?: boolean } = {},
 ): Promise<CatalogCourse | null> {
   const rows = await scope.tx
     .select({
@@ -77,7 +100,17 @@ export async function findCourseBySlug(
         eq(products.id, courses.productId),
       ),
     )
-    .where(and(eq(courses.tenantId, scope.tenantId), eq(courses.slug, slug)))
+    .where(
+      and(
+        eq(courses.tenantId, scope.tenantId),
+        eq(courses.slug, slug),
+        // Archived is hidden from everybody, authors included: retiring a
+        // course should take it off the author's list too, not just the
+        // students'.
+        isNull(courses.archivedAt),
+        ...(options.includeUnpublished ? [] : [eq(products.isPublished, true)]),
+      ),
+    )
     .limit(1);
 
   return rows[0] ?? null;

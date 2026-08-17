@@ -62,6 +62,21 @@ export const lessons = pgTable(
     contentMd: text('content_md'),
     durationSeconds: integer('duration_seconds'),
     isFreePreview: boolean('is_free_preview').notNull().default(false),
+    /**
+     * Draft until somebody says otherwise.
+     *
+     * Distinct from isFreePreview, which answers "may a stranger listen to
+     * this", not "is this finished". A course could be published while a
+     * lesson inside it was still being written, and the only way to hide the
+     * half-written one was to hold back the whole course.
+     */
+    isPublished: boolean('is_published').notNull().default(false),
+    /**
+     * Set when somebody removes a lesson. Nothing is destroyed: a lesson
+     * carries other people's progress rows, and a delete that takes those with
+     * it is not recoverable from a mistake.
+     */
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
     sortOrder: integer('sort_order').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
