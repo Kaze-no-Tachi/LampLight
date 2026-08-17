@@ -1,4 +1,10 @@
-import { GRACE_HOST, PEOPLE, signIn, url } from '../helpers/browser';
+import {
+  GRACE_HOST,
+  PEOPLE,
+  SEED_PASSWORD,
+  signIn,
+  url,
+} from '../helpers/browser';
 import { expect, test } from '../helpers/test';
 
 /**
@@ -285,5 +291,52 @@ test.describe('adding lessons', () => {
     await visitor.goto(url(GRACE_HOST, '/courses'));
     await visitor.getByRole('link', { name: course }).first().click();
     await expect(visitor.locator('main')).toContainText(lesson);
+  });
+});
+
+test.describe('your own account', () => {
+  test('lets you change your password, and the new one works', async ({
+    page,
+    browser,
+  }) => {
+    // The page listed courses and nothing else. Changing a password you still
+    // know meant using the forgotten-password flow and claiming otherwise.
+    // student2 is the subject: no other test signs in as them.
+    await signIn(page, PEOPLE.otherStudent);
+    await page.goto(url(GRACE_HOST, '/account'));
+
+    const next = 'a-brand-new-password-99';
+    await page.locator('input[name="currentPassword"]').fill(SEED_PASSWORD);
+    await page.locator('input[name="newPassword"]').fill(next);
+    await page.getByRole('button', { name: /^Change password$/ }).click();
+    await expect(page.getByText(/Password changed/i)).toBeVisible();
+
+    // Proof, in a fresh context: the new password signs in.
+    const after = await browser.newContext();
+    const fresh = await after.newPage();
+    await fresh.goto(url(GRACE_HOST, '/sign-in'));
+    await fresh.locator('input[name=email]').fill(PEOPLE.otherStudent);
+    await fresh.locator('input[name=password]').fill(next);
+    await fresh.getByRole('button', { name: /sign in/i }).click();
+    await fresh.waitForURL('**/account', { timeout: 15_000 });
+
+    // Put it back, so the fixture is what the seed says for every other spec.
+    await fresh.locator('input[name="currentPassword"]').fill(next);
+    await fresh.locator('input[name="newPassword"]').fill(SEED_PASSWORD);
+    await fresh.getByRole('button', { name: /^Change password$/ }).click();
+    await expect(fresh.getByText(/Password changed/i)).toBeVisible();
+
+    await after.close();
+  });
+
+  test('refuses when the current password is wrong', async ({ page }) => {
+    await signIn(page, PEOPLE.student);
+    await page.goto(url(GRACE_HOST, '/account'));
+
+    await page.locator('input[name="currentPassword"]').fill('not-my-password');
+    await page.locator('input[name="newPassword"]').fill('some-new-password-1');
+    await page.getByRole('button', { name: /^Change password$/ }).click();
+
+    await expect(page.getByText(/Check your current password/i)).toBeVisible();
   });
 });

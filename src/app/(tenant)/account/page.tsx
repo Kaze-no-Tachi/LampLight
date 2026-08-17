@@ -8,6 +8,7 @@ import {
 import { findSignupQuestions } from '@/db/repositories/settings';
 import { requireViewer } from '@/lib/auth/guards';
 import { parseQuestions } from '@/lib/signup/questions';
+import { ChangeNameForm, ChangePasswordForm } from './profile-forms';
 
 /**
  * A person's own record at this institute.
@@ -94,6 +95,27 @@ export default async function AccountPage() {
             ))}
           </ul>
         )}
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-xl font-semibold tracking-tight">Your details</h2>
+          <p className="text-muted-foreground text-sm">
+            Your name is what other people here see. Your address is how you
+            sign in, and changing it is not self-serve: ask the office.
+          </p>
+        </div>
+        <ChangeNameForm name={membership?.name ?? ''} />
+      </section>
+
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-xl font-semibold tracking-tight">Password</h2>
+          <p className="text-muted-foreground text-sm">
+            Changing it signs out anything else that is signed in as you.
+          </p>
+        </div>
+        <ChangePasswordForm />
       </section>
 
       {answered.length > 0 && (

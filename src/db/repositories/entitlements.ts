@@ -148,6 +148,8 @@ export type MembershipDetail = MembershipRecord & {
   /** Answers to this institute's own intake questions, unparsed. */
   profileJson: unknown;
   joinedAt: Date;
+  /** Platform-wide, from the users table. What other people here see. */
+  name: string;
 };
 
 /**
@@ -167,8 +169,14 @@ export async function findMembershipDetail(
       role: memberships.role,
       profileJson: memberships.profileJson,
       joinedAt: memberships.createdAt,
+      // From the global users table, so the tenant filter stays on
+      // memberships. That is the row that decides whether this person belongs
+      // here; users is joined to read the name off an id we have already
+      // established belongs to this institute.
+      name: users.name,
     })
     .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
     .where(
       and(
         eq(memberships.tenantId, scope.tenantId),
