@@ -66,9 +66,13 @@ first and then a `decide*` predicate. The one inline comparison is
 - [x] **Chunk 2a, shelf queries.** `listShelfCourses` and
       `listProgramProgress`, registered in the isolation harness. Commit
       `001c84b`.
-- [ ] **Chunk 2b, the screens.** `/catalogue`, `/catalogue/[slug]`, `/courses`
+- [x] **Chunk 2b, the screens.** `/catalogue`, `/catalogue/[slug]`, `/courses`
       as the student shelf, `enrollAction`, browser specs updated for the moved
-      URLs.
+      URLs. Along the way: fixed `can()`'s course:enroll to ask
+      `hasActiveEntitlement` rather than a direct-course lookup, so a
+      program-entitled student is not offered a redundant second enrolment,
+      and published every seeded lesson so the shelf's seeded progress
+      fixture is actually visible. Commit `13d5f60`.
 - [ ] **Chunk 3, one editor** at `/courses/[courseId]/edit`.
 - [ ] **Chunk 4, teach** with the coming-soon panels.
 - [ ] **Chunk 5, cleanup**: delete `/settings/catalog` and

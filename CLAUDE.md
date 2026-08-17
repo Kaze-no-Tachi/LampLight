@@ -68,7 +68,11 @@ waits for `migrate` to exit successfully. The box exposes nothing but SSH, and
 ## Outstanding
 
 - `docs/plans/course-flow-round-2.md` is the live piece of work, with progress
-  marked. Chunks 1 and 2a are done.
+  marked. Chunks 1, 2a and 2b are done; chunk 3 (one editor at
+  `/courses/[courseId]/edit`) is next. Lessons still have no student-facing
+  publish gate: `is_published` exists and the shelf already reads it, but the
+  catalogue and lesson pages show a lesson regardless of it. That is chunk 3's
+  job, not a bug to chase before it.
 - Roll the Cloudflare API token and the Brevo API key, both exposed in an
   earlier session transcript.
 - R2 bucket wants recreating in ENAM: it was made in APAC and location is fixed
