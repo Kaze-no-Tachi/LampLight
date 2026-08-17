@@ -40,7 +40,7 @@
 #   3. Designate origin.<apex> as the Custom Hostnames fallback origin and wait
 #      for its status to read Active.
 
-tunnel: REPLACE_WITH_TUNNEL_UUID
+tunnel: 4975837c-4b68-450c-9633-2e884b173c6f
 credentials-file: /etc/cloudflared/creds/tunnel.json
 
 # Fail fast rather than buffering a slow origin.
