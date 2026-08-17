@@ -96,6 +96,94 @@ export async function addModuleAction(
   return { status: 'ok' };
 }
 
+/**
+ * Adds a lesson to a course without anybody naming a section.
+ *
+ * The existing addLessonAction takes a moduleId, which is right for a course
+ * that has several sections and wrong for the common case: an institute
+ * writing its first course does not have a mental model of sections and should
+ * not have to acquire one to add lesson two. This resolves the section itself,
+ * using the first one, and creates it if a course somehow has none, which is
+ * true of every course made before courses came with one.
+ */
+export async function addLessonToCourseAction(
+  formData: FormData,
+): Promise<ActionResult> {
+  const viewer = await requireViewer();
+  const courseId = String(formData.get('courseId') ?? '');
+  const title = String(formData.get('title') ?? '').trim();
+  const isFreePreview = formData.get('isFreePreview') !== null;
+
+  if (!title) return { status: 'error', message: 'A title is required.' };
+
+  const done = await getTenantDb(viewer.tenant.id).run(async (scope) => {
+    const decision = await decideCourseAuthoring(
+      scope,
+      { tenantId: viewer.tenant.id, userId: viewer.userId },
+      courseId,
+    );
+    if (!decision.allowed) return false;
+
+    const [first] = await scope.tx
+      .select({ id: modules.id })
+      .from(modules)
+      .where(
+        and(
+          eq(modules.tenantId, scope.tenantId),
+          eq(modules.courseId, courseId),
+        ),
+      )
+      .orderBy(modules.sortOrder)
+      .limit(1);
+
+    let moduleId = first?.id;
+
+    if (!moduleId) {
+      const [made] = await scope.tx
+        .insert(modules)
+        .values({
+          tenantId: scope.tenantId,
+          courseId,
+          title: 'Lessons',
+          sortOrder: 0,
+        })
+        .returning({ id: modules.id });
+      moduleId = made?.id;
+    }
+
+    if (!moduleId) return false;
+
+    const next = await scope.tx
+      .select({
+        next: sql<number>`coalesce(max(${lessons.sortOrder}), -1) + 1`,
+      })
+      .from(lessons)
+      .where(
+        and(
+          eq(lessons.tenantId, scope.tenantId),
+          eq(lessons.moduleId, moduleId),
+        ),
+      );
+
+    await scope.tx.insert(lessons).values({
+      tenantId: scope.tenantId,
+      moduleId,
+      title,
+      slug: slugify(title),
+      isFreePreview,
+      sortOrder: next[0]?.next ?? 0,
+    });
+
+    return true;
+  });
+
+  if (!done) return { status: 'error', message: 'That course is not yours.' };
+
+  revalidatePath(`/teach/courses/${courseId}`);
+  revalidatePath('/teach');
+  return { status: 'ok' };
+}
+
 export async function addLessonAction(
   formData: FormData,
 ): Promise<ActionResult> {

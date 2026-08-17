@@ -3,6 +3,7 @@ import {
   courseInstructors,
   courses,
   memberships,
+  modules,
   products,
   programCourses,
   programs,
@@ -116,6 +117,22 @@ export async function createCourse(
     .returning({ id: courses.id });
 
   if (!created) return { status: 'error', message: 'Could not create it.' };
+
+  // A course starts with one section, and nobody is ever shown it.
+  //
+  // lessons.module_id is NOT NULL, so a lesson cannot exist without a module.
+  // That is a real constraint and making it nullable would put "which lessons
+  // have no section" into every query that touches them. But an institute
+  // adding its first course does not want to think about sections, so one is
+  // created here and the editor hides it while it is the only one. Somebody
+  // who genuinely wants to group lessons adds a second, and both appear.
+  await scope.tx.insert(modules).values({
+    tenantId: scope.tenantId,
+    courseId: created.id,
+    title: 'Lessons',
+    sortOrder: 0,
+  });
+
   return { status: 'ok', id: created.id };
 }
 

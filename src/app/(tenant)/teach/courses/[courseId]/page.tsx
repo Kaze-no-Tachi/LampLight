@@ -7,6 +7,7 @@ import { courses, lessons, modules } from '@/db/schema';
 import { decideCourseAuthoring } from '@/lib/access/authoring';
 import { requireViewer } from '@/lib/auth/guards';
 import { CourseEditor } from './course-editor';
+import { AddLessonDialog } from './add-lesson-dialog';
 
 /**
  * Editing one course: what it says, and what comes with it.
@@ -131,14 +132,26 @@ export default async function EditCoursePage({
 
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-medium">Lessons</h2>
-        {data.modules.length === 0 ? (
+
+        <AddLessonDialog courseId={courseId} />
+
+        {data.modules.every(
+          (courseModule) => courseModule.lessons.length === 0,
+        ) ? (
           <p className="text-muted-foreground text-sm">
-            No sections yet. Add one from the teaching page.
+            None yet. Add the first one above, then open it to attach the
+            recording and any handouts.
           </p>
         ) : (
           data.modules.map((courseModule) => (
             <div key={courseModule.id} className="flex flex-col gap-1">
-              <h3 className="text-sm font-medium">{courseModule.title}</h3>
+              {/* Sections are an advanced feature that most courses never use,
+                  so the heading only appears once there is more than one to
+                  tell apart. A course with a single section reads as a plain
+                  list of lessons, which is what it is. */}
+              {data.modules.length > 1 && (
+                <h3 className="text-sm font-medium">{courseModule.title}</h3>
+              )}
               <ul className="flex flex-col">
                 {courseModule.lessons.map((lesson) => (
                   <li key={lesson.id} className="border-b py-2 last:border-b-0">

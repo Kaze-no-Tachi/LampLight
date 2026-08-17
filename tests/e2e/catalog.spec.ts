@@ -205,16 +205,85 @@ test.describe('signing out', () => {
     // The server, first and foremost. Asserting the header was the original
     // mistake: the home page offers its own Sign in link, so that assertion
     // passed while the session was still live.
-    const session = await page.evaluate(async () => {
-      const response = await fetch('/api/auth/get-session', {
-        cache: 'no-store',
-      });
-      return (await response.json()) as { user?: unknown } | null;
-    });
-    expect(session?.user).toBeFalsy();
+    //
+    // Polled, because the click starts a request and returns. Reading the
+    // session once, immediately, races it and fails about one run in three.
+    await expect
+      .poll(
+        async () =>
+          page.evaluate(async () => {
+            const response = await fetch('/api/auth/get-session', {
+              cache: 'no-store',
+            });
+            const body = (await response.json()) as { user?: unknown } | null;
+            return Boolean(body?.user);
+          }),
+        { message: 'the session should be gone', timeout: 10_000 },
+      )
+      .toBe(false);
 
     // And a gated page is gated again.
     const response = await page.goto(url(GRACE_HOST, '/account'));
     expect(response?.status()).toBe(404);
+  });
+});
+
+test.describe('adding lessons', () => {
+  test('never mentions sections, and the lesson reaches a student', async ({
+    page,
+    context,
+  }) => {
+    // THE FLOW THIS REPLACES. Adding lesson two meant: leave the course, add a
+    // "section" from the teaching list, come back, find the section, add the
+    // lesson to it. Three screens and a concept an institute writing its first
+    // course has no use for. A course now comes with a section nobody sees,
+    // and the button is on the page the lessons are listed on.
+    await signIn(page, PEOPLE.admin);
+    await openCatalog(page);
+
+    const course = `Pastoral Care ${Date.now()}`;
+    await page
+      .locator('input[placeholder="Old Testament Survey"]')
+      .fill(course);
+    await page.getByRole('button', { name: /create course/i }).click();
+    await expect(page.getByText(/Course created/i)).toBeVisible();
+
+    await page
+      .locator('li', { hasText: course })
+      .first()
+      .getByRole('link', { name: /edit content/i })
+      .click();
+    await page.waitForURL('**/teach/courses/**');
+
+    // The word does not appear on the screen at all.
+    await expect(page.locator('main')).not.toContainText('section', {
+      ignoreCase: true,
+    });
+
+    const lesson = `Visiting the sick ${Date.now()}`;
+    await page.getByRole('button', { name: /^Add lesson$/ }).click();
+    await page.locator('dialog input[name="title"]').fill(lesson);
+    await page.locator('dialog input[name="isFreePreview"]').check();
+    await page
+      .locator('dialog')
+      .getByRole('button', { name: /^Add lesson$/ })
+      .click();
+
+    await expect(page.locator('main')).toContainText(lesson);
+
+    // Publish it and check a visitor gets the free preview lesson, which is
+    // the whole chain: created, listed, visible.
+    await openCatalog(page);
+    await page
+      .locator('li', { hasText: course })
+      .first()
+      .getByRole('button', { name: /^Publish$/ })
+      .click();
+    await expect(page.getByText('Published.')).toBeVisible();
+
+    const visitor = await context.newPage();
+    await visitor.goto(url(GRACE_HOST, '/courses'));
+    await visitor.getByRole('link', { name: course }).first().click();
+    await expect(visitor.locator('main')).toContainText(lesson);
   });
 });
