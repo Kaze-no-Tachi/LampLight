@@ -34,6 +34,10 @@ const ADMIN_CLIENT_ALLOWLIST = [
   'src/db/migrate.ts',
   'src/db/seed.ts',
   'src/db/reset.ts',
+  // Runs once, by hand, to create the first platform operator. There is no
+  // tenant to scope to: the row it writes is what makes somebody an operator
+  // above every tenant, and the account it creates belongs to none of them.
+  'src/db/bootstrap-admin.ts',
   'src/app/(platform)/superadmin/**',
   'tests/isolation/**',
   'tests/helpers/**',

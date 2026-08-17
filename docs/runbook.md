@@ -250,6 +250,44 @@ the browser suite runs and how a developer might poke at `pnpm start` locally.
 `pnpm env:check` warns when it is set, and the application logs a warning on
 every boot in production. Neither is a substitute for it not being there.
 
+### 1.5 The first platform operator
+
+A fresh deployment has no operator, and nothing in the product can create one.
+Signup belongs to an institute and produces an invitation rather than an
+account; provisioning an institute is itself a superadmin action; and the seed
+that does create an operator also invents two fictional institutes, so it must
+never be pointed at a real database. Left alone, a correctly deployed platform
+locks out the person who deployed it, and the console answers 404 because that
+is what it answers everybody.
+
+Once, after migrations:
+
+```bash
+docker compose -f docker-compose.prod.yml --profile tools run --rm \
+  -e BOOTSTRAP_PASSWORD='<a password you choose, 12 or more>' \
+  migrate node_modules/.bin/tsx src/db/bootstrap-admin.ts you@example.com "Your Name"
+```
+
+Omit `BOOTSTRAP_PASSWORD` and it generates one and prints it once.
+
+The account is created through the same Better Auth call the activation route
+uses, so the password hashes the way sign-in verifies it. Building the row with
+an INSERT and a hash of your own produces an account that exists and cannot
+sign in. The address is marked verified in the same step, because sign-in
+refuses an unverified one and the usual proof is a mailed link belonging to an
+institute's hostname, which has no meaning at the apex.
+
+**It refuses if any platform admin already exists**, and that refusal is the
+point. On a live platform this would otherwise be a way to quietly grant
+somebody the keys to every institute. Promoting a second operator later is a
+deliberate INSERT into `platform_admins`, not a rerun.
+
+An address that already holds an account keeps its password: the script grants
+standing, it does not seize an identity by naming it. Same rule provisioning an
+institute follows.
+
+Then sign in at the apex and provision the first institute (section 4a).
+
 ---
 
 ## 2. Deploy

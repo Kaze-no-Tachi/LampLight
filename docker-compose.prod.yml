@@ -99,6 +99,11 @@ services:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL}
       DATABASE_ADMIN_URL: ${DATABASE_ADMIN_URL}
+      # Migrations do not need this. src/db/bootstrap-admin.ts does, because it
+      # creates the first operator's account through Better Auth so the
+      # password is hashed the way sign-in verifies it, and constructing Better
+      # Auth requires the secret. Same image, same profile, one deliberate run.
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
