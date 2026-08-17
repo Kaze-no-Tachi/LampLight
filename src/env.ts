@@ -65,6 +65,28 @@ const envSchema = z.object({
     .default('true')
     .transform((value) => value === 'true'),
   BETTER_AUTH_URL: z.string().url().optional(),
+  /**
+   * Declares that this instance is reached over plain HTTP.
+   *
+   * The session cookie is marked Secure in production, which is right: every
+   * supported deployment terminates TLS in front of the application, so the
+   * browser's connection is https even though the application's own socket is
+   * not. A Secure cookie is simply dropped by the browser over http, which
+   * fails in a particularly unhelpful way: sign-in answers 200 with a real
+   * token, nothing is stored, and every subsequent request looks like an
+   * anonymous visitor. That is the exact shape of a bug this repository has
+   * already been bitten by (see tests/helpers/browser.ts).
+   *
+   * So the choice is stated rather than inferred. Setting this drops the
+   * Secure attribute, and it must only ever be set where the browser really
+   * does speak http: the browser suite, and a developer poking at a
+   * production build on their own machine. Setting it on anything reachable
+   * from the internet hands the session cookie to anyone on the path.
+   */
+  INSECURE_HTTP: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 
   /**
    * Mail (phase 2, brought forward from P1).
@@ -203,6 +225,19 @@ export function assertPlatformConfig(): void {
   const value = getEnv();
 
   if (value.NODE_ENV !== 'production') return;
+
+  // Loud rather than fatal. The setting has one legitimate use in a production
+  // build (a browser driving it over http, which is how the browser suite
+  // runs) and one catastrophic one, and the two are indistinguishable from
+  // here. Refusing to start would break the suite that needs it; saying
+  // nothing would let it reach a real deployment silently.
+  if (value.INSECURE_HTTP) {
+    console.warn(
+      'WARNING: INSECURE_HTTP is set, so the session cookie is not marked ' +
+        'Secure. Anyone able to observe the connection can take a session. ' +
+        'This must never be set on an instance reachable from the internet.',
+    );
+  }
 
   // Mail is required in every production deployment, self-host included.
   // Account creation ends at a link sent to the address, so an instance

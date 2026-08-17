@@ -193,7 +193,11 @@ function createAuth() {
       // platform, which is exactly the cross-tenant leak this product cannot
       // have. Cross-subdomain cookies must stay off.
       crossSubDomainCookies: { enabled: false },
-      useSecureCookies: env.NODE_ENV === 'production',
+      // Secure in production, because every supported deployment terminates
+      // TLS in front of this process. INSECURE_HTTP is the one way to say
+      // otherwise, for the case where a browser really is speaking http to a
+      // production build; see the note on it in src/env.ts.
+      useSecureCookies: env.NODE_ENV === 'production' && !env.INSECURE_HTTP,
     },
 
     session: {

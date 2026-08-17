@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../helpers/test';
 import {
   audioState,
   PEOPLE,
@@ -81,12 +81,33 @@ test.describe('playing a lecture', () => {
       .poll(async () => (await audioState(page))?.paused, { timeout: 10_000 })
       .toBe(false);
 
+    // A seek is only honoured once the browser knows how long the file is, and
+    // `paused === false` arrives before that. Setting currentTime any earlier
+    // is dropped, playback carries on from zero, and the test fails on a race
+    // rather than on the behaviour it is about.
+    await expect
+      .poll(async () => (await audioState(page))?.duration, {
+        message: 'metadata should load before seeking',
+        timeout: 10_000,
+      })
+      .not.toBeNull();
+
     // Well past the fifteen second threshold under which a position is treated
     // as somebody who pressed play and wandered off.
     await page.evaluate(() => {
       const element = document.querySelector('audio');
       if (element) element.currentTime = 45;
     });
+
+    // And the seek itself is asynchronous, so pausing before it lands would
+    // sync whatever position playback happened to be at.
+    await expect
+      .poll(async () => (await audioState(page))?.position ?? 0, {
+        message: 'the seek should land before pausing',
+        timeout: 10_000,
+      })
+      .toBeGreaterThanOrEqual(44);
+
     await page.evaluate(() => document.querySelector('audio')?.pause());
 
     // Pausing syncs, so the server should have it without waiting for the

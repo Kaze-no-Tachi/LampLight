@@ -307,6 +307,14 @@ matters. `SELF_SERVE_SIGNUP` is a kill switch above it: setting it false stops
 every institute at once without touching anybody's settings, and restoring it
 restores each institute's own choice. See docs/adr/0006.
 
+**`INSECURE_HTTP` must never be set on a real deployment.** It drops the
+Secure attribute from the session cookie, so the cookie travels in the clear
+and anyone who can observe the connection can take a session. It exists for one
+situation: a browser speaking plain http to a production build, which is how
+the browser suite runs and how a developer might poke at `pnpm start` locally.
+`pnpm env:check` warns when it is set, and the application logs a warning on
+every boot in production.
+
 ---
 
 ## 4b. Custom domains

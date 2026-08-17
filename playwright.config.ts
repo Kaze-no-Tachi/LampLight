@@ -4,6 +4,10 @@ const PORT = Number(process.env.PORT ?? 3000);
 
 export default defineConfig({
   testDir: './tests/e2e',
+  // Runs before the web server starts, so the server comes up against a
+  // database this suite established rather than one an earlier command left
+  // behind. See the note in the file.
+  globalSetup: './tests/e2e-setup.ts',
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
@@ -62,6 +66,13 @@ export default defineConfig({
       // intended, so the test server is configured like production rather than
       // having the guard relaxed for it. Nothing here calls Cloudflare in this
       // phase, so placeholders are enough.
+      // `next start` is a production build, which marks the session cookie
+      // Secure, and this suite drives it over plain http. Without this the
+      // browser silently discards the cookie: sign-in answers 200 with a real
+      // token and every page afterwards renders as an anonymous visitor. That
+      // is exactly how nine of these tests failed while appearing to pass
+      // locally against a leftover development server.
+      INSECURE_HTTP: 'true',
       CLOUDFLARE_API_TOKEN: 'playwright-placeholder',
       CLOUDFLARE_ZONE_ID: 'playwright-placeholder',
       CLOUDFLARE_SAAS_FALLBACK_ORIGIN: 'origin.lamplight.school',

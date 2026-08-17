@@ -153,3 +153,42 @@ describe('environment validation', () => {
     expect(() => getEnv()).toThrow(/must not equal DATABASE_ADMIN_URL/);
   });
 });
+
+/**
+ * The session cookie is Secure in production, and stays that way unless
+ * somebody says out loud that this instance is served over plain http.
+ *
+ * Worth pinning because the failure mode is silent in the wrong direction. A
+ * missing Secure flag does not break anything visibly: sign-in works, pages
+ * render, and the only difference is that the cookie now travels in the clear.
+ * The suite that needs it off sets it explicitly, so a default that drifted
+ * would go unnoticed until it was somebody's session.
+ */
+describe('insecure http', () => {
+  it('is off unless asked for', async () => {
+    stub({ ...PLATFORM_PRODUCTION });
+    const { getEnv } = await import('@/env');
+
+    expect(getEnv().INSECURE_HTTP).toBe(false);
+  });
+
+  it('is on when asked for, and says so', async () => {
+    stub({ ...PLATFORM_PRODUCTION, INSECURE_HTTP: 'true' });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { getEnv, assertPlatformConfig } = await import('@/env');
+
+    expect(getEnv().INSECURE_HTTP).toBe(true);
+
+    // Production still serves, because the browser suite runs a production
+    // build over http and refusing would break it. Loud is the whole defence,
+    // so the warning is part of the contract rather than incidental.
+    stub({ CLOUDFLARE_API_TOKEN: 't', CLOUDFLARE_ZONE_ID: 'z' });
+    try {
+      assertPlatformConfig();
+    } catch {
+      // Cloudflare completeness is a different assertion's business.
+    }
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('INSECURE_HTTP'));
+    warn.mockRestore();
+  });
+});

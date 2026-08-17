@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test';
 import { GRACE_HOST, PEOPLE, signIn, url } from '../helpers/browser';
+import { clientAddress, clientHeaders, expect, test } from '../helpers/test';
 
 /**
  * Manual enrollment (PRD requirement P0-11), from both ends.
@@ -38,8 +38,12 @@ test.describe('enrolling somebody by hand', () => {
     await expect(page.getByText('Granted.')).toBeVisible();
 
     // A separate browser context, so this is the student's own session rather
-    // than the admin's view of them.
-    const studentContext = await browser.newContext();
+    // than the admin's view of them. Its own client address too: a context
+    // made here does not inherit the one the fixture gives the test, and two
+    // sign-ins sharing a bucket is how this suite met the rate limiter.
+    const studentContext = await browser.newContext({
+      extraHTTPHeaders: clientHeaders(clientAddress('enrolment student')),
+    });
     const studentPage = await studentContext.newPage();
     await signIn(studentPage, SUBJECT);
     await studentPage.goto(url(GRACE_HOST, '/account'));

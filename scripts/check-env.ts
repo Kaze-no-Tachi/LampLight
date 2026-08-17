@@ -104,6 +104,15 @@ async function main(): Promise<void> {
     );
   }
 
+  if (parsed.INSECURE_HTTP === 'true') {
+    console.log(
+      '\n  INSECURE_HTTP is set, so the session cookie is NOT marked Secure.' +
+        '\n  It travels in the clear and anyone on the path can take a' +
+        '\n  session. This belongs in the browser suite and nowhere else.' +
+        '\n  Remove it before this deployment faces the internet.',
+    );
+  }
+
   if (!parsed.DOMAIN_SWEEP_SECRET) {
     console.log(
       '\n  DOMAIN_SWEEP_SECRET is unset, so the sweep endpoint answers 404 and' +

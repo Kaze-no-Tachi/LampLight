@@ -28,7 +28,12 @@ env:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The browser suite runs a production build and drives 51 tests through one
+    # worker, and a failing test costs three attempts before it reports. Fifteen
+    # minutes was enough while everything passed and cut the run off mid-report
+    # the first time something did not, which hid the failures behind a
+    # cancellation.
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -75,6 +80,22 @@ jobs:
       - name: Check for em dashes
         run: pnpm exec tsx scripts/check-no-em-dash.ts
 
+      # Object storage, so every suite that seeds has somewhere to put the
+      # recordings. Started before the first seed rather than just before the
+      # browser suite: the seed reports a failed upload and carries on, so a
+      # bucket that appears later leaves rows pointing at objects that were
+      # never written, and the player then fails on a fixture problem wearing
+      # the costume of a product problem.
+      #
+      # Started from the development compose file rather than declared again as
+      # a service container, so there is one definition of how Minio is
+      # configured and CI cannot drift from what a developer runs. Postgres
+      # stays a service container because it has to be up before any step runs.
+      - name: Object storage
+        run: |
+          docker compose up -d minio minio-init
+          docker compose logs minio-init
+
       - name: Apply migrations
         run: pnpm db:migrate
 
@@ -114,20 +135,6 @@ jobs:
           grep -qE "ƒ /\s" /tmp/build.log \
             || { echo "FAIL: the tenant route / is not dynamic"; exit 1; }
           echo "all host-dependent routes are dynamic"
-
-      # Object storage, so the browser suite exercises the media path for real:
-      # an instructor uploading a lecture, the confirm-it-arrived step that
-      # asks the bucket, and a student playing what came back. A skipped test
-      # protects nothing.
-      #
-      # Started from the development compose file rather than declared again as
-      # a service container, so there is one definition of how Minio is
-      # configured and CI cannot drift from what a developer runs. Postgres
-      # stays a service container because it has to be up before any step runs.
-      - name: Object storage for the browser suite
-        run: |
-          docker compose up -d minio minio-init
-          docker compose logs minio-init
 
       - name: End to end tests
         # The auth boundary lives here rather than in the unit suite, because

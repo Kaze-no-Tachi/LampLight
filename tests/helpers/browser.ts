@@ -32,11 +32,18 @@ export function url(host: string, path = '/'): string {
 }
 
 /**
- * Signs in and waits for the session to be real.
+ * Signs in, and proves a session actually exists afterwards.
  *
- * Waiting on the account page rather than on a timeout: the form navigates on
- * success and stays put on failure, so a test whose credentials broke fails
- * here with a useful message instead of ten steps later with a 404.
+ * THE HOLE THIS CLOSES. The first version waited for the URL to become
+ * /account and called that success. It is not: the sign-in form navigates
+ * whenever the endpoint answers 200, and the endpoint answers 200 while the
+ * browser is quietly discarding the cookie it set. That happened for real, and
+ * every gated page then rendered its 404 for a signed-out visitor, so nine
+ * tests failed with locator timeouts that pointed at the pages rather than at
+ * the sign-in they all shared.
+ *
+ * Asking the server who it thinks we are costs one request and cannot be
+ * satisfied by a redirect.
  */
 export async function signIn(
   page: Page,
@@ -48,6 +55,23 @@ export async function signIn(
   await page.locator('input[name=password]').fill(SEED_PASSWORD);
   await page.getByRole('button', { name: /sign in/i }).click();
   await page.waitForURL(`**${host}:*/account`, { timeout: 15_000 });
+
+  const session = await page.evaluate(async () => {
+    const response = await fetch('/api/auth/get-session', {
+      cache: 'no-store',
+    });
+    return (await response.json()) as { user?: { email?: string } } | null;
+  });
+
+  if (session?.user?.email !== email) {
+    throw new Error(
+      `signed in as ${email} and reached /account, but the server reports ` +
+        `no session (${JSON.stringify(session)}). The cookie was not kept: ` +
+        'check that the server under test has INSECURE_HTTP set, since a ' +
+        'production build marks the session cookie Secure and this suite ' +
+        'speaks http.',
+    );
+  }
 }
 
 /** What the media element is doing, which is the only honest playback check. */
