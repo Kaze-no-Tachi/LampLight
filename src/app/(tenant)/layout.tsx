@@ -6,6 +6,7 @@ import { requireTenant } from '@/lib/tenancy/context';
 import { loadBranding } from '@/lib/theme/branding';
 import { SiteFooter, SiteHeader, ThemeStyle } from './chrome';
 import { PlayerProvider } from './player/player-provider';
+import { RsuiteProvider } from './rsuite-provider';
 
 /**
  * Never prerendered, and this is a correctness requirement rather than a
@@ -71,13 +72,15 @@ export default async function TenantLayout({
         page under it changes. The bottom padding leaves room for the bar it
         renders, so a footer is never trapped underneath it.
       */}
-      <PlayerProvider>
-        <div className="flex min-h-screen flex-col pb-24">
-          <SiteHeader branding={branding} viewer={viewer} />
-          <div className="flex-1">{children}</div>
-          <SiteFooter branding={branding} />
-        </div>
-      </PlayerProvider>
+      <RsuiteProvider>
+        <PlayerProvider>
+          <div className="flex min-h-screen flex-col pb-24">
+            <SiteHeader branding={branding} viewer={viewer} />
+            <div className="flex-1">{children}</div>
+            <SiteFooter branding={branding} />
+          </div>
+        </PlayerProvider>
+      </RsuiteProvider>
     </>
   );
 }

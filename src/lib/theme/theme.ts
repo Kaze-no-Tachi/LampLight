@@ -322,9 +322,12 @@ export function resolveTokens(settings: ThemeSettings): TokenMap {
  *
  * This is a check on the generator, not on the input. Input has already been
  * parsed into numbers by the time anything reaches here, so a failure means
- * this file changed in a way that lets an unparsed value through.
+ * this file changed in a way that lets an unparsed value through. `!` is here
+ * only for the `!important` the rsuite bridge below writes on its own
+ * properties; it is a fixed string this file emits, never something read
+ * from a token value.
  */
-const SAFE_CSS = /^[a-z0-9:;{}#.\-, \n]*$/i;
+const SAFE_CSS = /^[a-z0-9:;{}#.\-, !\n]*$/i;
 
 /**
  * The stylesheet for one institute: a single :root block of custom properties.
@@ -345,7 +348,82 @@ function declarations(tokens: TokenMap): string {
   const body = THEME_TOKENS.map((token) => `--${token}:${tokens[token]}`).join(
     ';',
   );
-  return `:root{${body}}`;
+
+  // rsuite's own stylesheet declares this same set of names at :root, loaded
+  // as an ordinary import with no relationship to the precedence this block
+  // renders under. `!important` is what makes the institute's colors win
+  // regardless of which stylesheet the browser happens to place last, rather
+  // than depending on load order being right by accident.
+  const rsuite = Object.entries(resolveRsuiteTokens(tokens))
+    .map(([name, value]) => `--${name}:${value} !important`)
+    .join(';');
+
+  return `:root{${body};${rsuite}}`;
+}
+
+/**
+ * rsuite (round 2 UI adoption, see docs/plans/rsuite-adoption.md) themes
+ * itself through its own CSS variables, entirely independent of the ones
+ * above: it ships with a fixed blue and gray scale that has no idea an
+ * institute picked its own brand color. Every rsuite component this app
+ * adopts reads a primary and gray scale derived from the exact tokens above
+ * instead, so a rsuite Button is the institute's brand color, not rsuite's.
+ *
+ * Ten stops each, the same convention rsuite's own scale uses (50 lightest to
+ * 900 darkest, 500 the base tone). Primary tints toward white and shades
+ * toward black, which is how a brand color's hover and active states read
+ * regardless of theme. Gray runs between the institute's own background and
+ * foreground rather than toward white and black, so a rsuite surface sits on
+ * the actual page (dark for the evening preset, light for the others)
+ * instead of assuming a light theme no matter what preset is active.
+ */
+const RSUITE_PRIMARY_TINTS: Record<string, number> = {
+  50: 0.92,
+  100: 0.84,
+  200: 0.68,
+  300: 0.52,
+  400: 0.26,
+};
+const RSUITE_PRIMARY_SHADES: Record<string, number> = {
+  600: 0.12,
+  700: 0.24,
+  800: 0.36,
+  900: 0.48,
+};
+const RSUITE_GRAY_STOPS: Record<string, number> = {
+  0: 0,
+  50: 0.04,
+  100: 0.08,
+  200: 0.16,
+  300: 0.28,
+  400: 0.42,
+  500: 0.55,
+  600: 0.68,
+  700: 0.78,
+  800: 0.88,
+  900: 0.96,
+};
+
+const RSUITE_WHITE: [number, number, number] = [255, 255, 255];
+const RSUITE_BLACK: [number, number, number] = [0, 0, 0];
+
+/** The rsuite `--rs-*` custom properties derived from a resolved token map. */
+export function resolveRsuiteTokens(tokens: TokenMap): Record<string, string> {
+  const primary = parseColor(tokens.primary) ?? RSUITE_BLACK;
+  const background = parseColor(tokens.background) ?? RSUITE_WHITE;
+  const foreground = parseColor(tokens.foreground) ?? RSUITE_BLACK;
+
+  const rs: Record<string, string> = { 'rs-primary-500': toHex(primary) };
+  for (const [stop, amount] of Object.entries(RSUITE_PRIMARY_TINTS)) {
+    rs[`rs-primary-${stop}`] = toHex(mix(primary, RSUITE_WHITE, amount));
+  }
+  for (const [stop, amount] of Object.entries(RSUITE_PRIMARY_SHADES)) {
+    rs[`rs-primary-${stop}`] = toHex(mix(primary, RSUITE_BLACK, amount));
+  }
+  for (const [stop, amount] of Object.entries(RSUITE_GRAY_STOPS)) {
+    rs[`rs-gray-${stop}`] = toHex(mix(background, foreground, amount));
+  }
+  return rs;
 }
 
 /** Serialises the editable shape back to what theme_json should hold. */
