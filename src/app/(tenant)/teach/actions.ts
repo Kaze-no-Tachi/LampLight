@@ -1,7 +1,7 @@
 'use server';
 
 import { randomUUID } from 'node:crypto';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { getTenantDb } from '@/db/client';
 import { auditLog, lessonResources, lessons, modules } from '@/db/schema';
@@ -10,8 +10,14 @@ import {
   decideLessonAuthoring,
 } from '@/lib/access/authoring';
 import { requireViewer } from '@/lib/auth/guards';
+import { checkUpload, formatBytes, readDuration } from '@/lib/media/uploads';
 import { buildObjectKey } from '@/lib/storage/keys';
-import { signObjectWrite, storageConfigured } from '@/lib/storage';
+import {
+  deleteObject,
+  signObjectWrite,
+  statObject,
+  storageConfigured,
+} from '@/lib/storage';
 
 /**
  * Instructor content management (PRD requirement P0-10).
@@ -191,7 +197,6 @@ export async function requestUploadAction(
   const viewer = await requireViewer();
   const lessonId = String(formData.get('lessonId') ?? '');
   const filename = String(formData.get('filename') ?? 'audio.mp3');
-  const contentType = String(formData.get('contentType') ?? 'audio/mpeg');
 
   if (!storageConfigured()) {
     return {
@@ -200,9 +205,14 @@ export async function requestUploadAction(
     };
   }
 
-  if (!contentType.startsWith('audio/')) {
-    return { status: 'error', message: 'Only audio uploads are supported.' };
-  }
+  // Checked here, and the real size checked again against the bucket in
+  // completeUploadAction, because both of these numbers come from a browser.
+  const check = checkUpload({
+    contentType: String(formData.get('contentType') ?? ''),
+    byteSize: Number(formData.get('byteSize') ?? 0),
+  });
+  if (!check.ok) return { status: 'error', message: check.message };
+  const contentType = check.contentType;
 
   const resourceId = randomUUID();
 
@@ -228,6 +238,11 @@ export async function requestUploadAction(
       kind: 'audio',
       storageKey: objectKey,
       filename,
+      // Null until the object is confirmed to exist. That is what makes this
+      // row "reserved" rather than "ready": every read that offers media to a
+      // student filters on it, so an upload that never finished is invisible
+      // rather than a lesson that fails to play.
+      byteSize: null,
       isDownloadable: false,
       sortOrder: 0,
     });
@@ -266,4 +281,262 @@ function slugify(title: string): string {
       .replace(/^-+|-+$/g, '')
       .slice(0, 60) || 'lesson'
   );
+}
+
+/**
+ * Confirms an upload actually arrived, and only then makes it playable.
+ *
+ * WHY THE APPLICATION HAS TO ASK THE BUCKET
+ *
+ * The bytes go straight from the browser to object storage, which is what
+ * keeps a 200 MB lecture out of the application's memory and off its
+ * bandwidth bill twice over. The cost of that is that the application is not
+ * in the path and does not know what happened. The browser reporting success
+ * is not evidence: it can crash, lose its connection after the last chunk, or
+ * simply be lying, and the earlier version of this feature believed it.
+ *
+ * So the row stays incomplete (byte_size null) until a HEAD against the bucket
+ * says otherwise. The size stored is the bucket's, not the browser's.
+ *
+ * This is the same class of bug as the seeded resources that pointed at
+ * objects nobody had uploaded: a row saying there is a recording, and silence
+ * when a student presses play.
+ */
+export async function completeUploadAction(
+  formData: FormData,
+): Promise<ActionResult> {
+  const viewer = await requireViewer();
+  const resourceId = String(formData.get('resourceId') ?? '');
+  const lessonId = String(formData.get('lessonId') ?? '');
+  const duration = readDuration(Number(formData.get('durationSeconds') ?? 0));
+  const downloadable = String(formData.get('isDownloadable') ?? '') === 'true';
+
+  if (!storageConfigured()) {
+    return {
+      status: 'error',
+      message: 'Media storage is not configured on this instance.',
+    };
+  }
+
+  const key = await getTenantDb(viewer.tenant.id).run(async (scope) => {
+    const decision = await decideLessonAuthoring(
+      scope,
+      { tenantId: viewer.tenant.id, userId: viewer.userId },
+      lessonId,
+    );
+    if (!decision.allowed) return null;
+
+    const rows = await scope.tx
+      .select({ storageKey: lessonResources.storageKey })
+      .from(lessonResources)
+      .where(
+        and(
+          eq(lessonResources.tenantId, scope.tenantId),
+          eq(lessonResources.id, resourceId),
+          // Named with the lesson as well as the id, so a resource id from
+          // another lesson this person may not teach cannot be completed by
+          // pairing it with one they may.
+          eq(lessonResources.lessonId, lessonId),
+        ),
+      )
+      .limit(1);
+
+    return rows[0]?.storageKey ?? null;
+  });
+
+  if (!key) return DENIED;
+
+  const facts = await statObject(viewer.tenant.id, key);
+  if (!facts) {
+    return {
+      status: 'error',
+      message: 'That upload did not arrive. Try sending the file again.',
+    };
+  }
+
+  const check = checkUpload({
+    contentType: facts.contentType ?? '',
+    byteSize: facts.byteSize,
+  });
+  if (!check.ok) {
+    // The object is real but is not what was asked for, which means the signed
+    // PUT was used for something other than the file that was declared. It
+    // does not get to stay in the bucket.
+    await deleteObject(viewer.tenant.id, key);
+    return { status: 'error', message: check.message };
+  }
+
+  // Everything else attached to this lesson, collected before the new row is
+  // marked ready so that "replace" is what the button already promised.
+  const superseded = await getTenantDb(viewer.tenant.id).run((scope) =>
+    scope.tx
+      .select({
+        id: lessonResources.id,
+        storageKey: lessonResources.storageKey,
+      })
+      .from(lessonResources)
+      .where(
+        and(
+          eq(lessonResources.tenantId, scope.tenantId),
+          eq(lessonResources.lessonId, lessonId),
+          eq(lessonResources.kind, 'audio'),
+          ne(lessonResources.id, resourceId),
+        ),
+      ),
+  );
+
+  await getTenantDb(viewer.tenant.id).run(async (scope) => {
+    await scope.tx
+      .update(lessonResources)
+      .set({
+        byteSize: facts.byteSize,
+        isDownloadable: downloadable,
+      })
+      .where(
+        and(
+          eq(lessonResources.tenantId, scope.tenantId),
+          eq(lessonResources.id, resourceId),
+        ),
+      );
+
+    // A duration the institute did not have before. Only written when the
+    // browser managed to read one, so a failed decode leaves the old value
+    // rather than blanking it.
+    if (duration !== null) {
+      await scope.tx
+        .update(lessons)
+        .set({ durationSeconds: duration })
+        .where(
+          and(eq(lessons.tenantId, scope.tenantId), eq(lessons.id, lessonId)),
+        );
+    }
+
+    // REPLACE MEANS REPLACE.
+    //
+    // The button says "Replace audio" once a lesson has a recording, and an
+    // earlier version simply added a second row: the instructor was told the
+    // recording had been replaced, and the student carried on hearing the old
+    // one, because the lesson page plays the first attachment. Found by
+    // uploading a file and then listening as a student.
+    //
+    // Done after the new upload is confirmed present, so a failed upload can
+    // never destroy the recording an institute already had.
+    if (superseded.length > 0) {
+      await scope.tx.delete(lessonResources).where(
+        and(
+          eq(lessonResources.tenantId, scope.tenantId),
+          inArray(
+            lessonResources.id,
+            superseded.map((row) => row.id),
+          ),
+        ),
+      );
+    }
+
+    await scope.tx.insert(auditLog).values({
+      tenantId: scope.tenantId,
+      actorUserId: viewer.userId,
+      action: 'lesson_resource.uploaded',
+      targetType: 'lesson',
+      targetId: lessonId,
+      metadataJson: {
+        resourceId,
+        byteSize: facts.byteSize,
+        size: formatBytes(facts.byteSize),
+        durationSeconds: duration,
+        replaced: superseded.map((row) => row.id),
+      },
+    });
+  });
+
+  // The objects last. An object with no row is invisible but harmless; a row
+  // with no object is a lesson that plays silence.
+  for (const old of superseded) {
+    // A link resource has no object of its own, so there is nothing to delete.
+    if (!old.storageKey) continue;
+    try {
+      await deleteObject(viewer.tenant.id, old.storageKey);
+    } catch {
+      // Left for the operator. The recording is already gone as far as anybody
+      // using the site is concerned.
+    }
+  }
+
+  revalidatePath('/teach');
+  revalidatePath(`/lessons/${lessonId}`);
+  return { status: 'ok' };
+}
+
+/**
+ * Removes a recording, object and row together.
+ *
+ * The object goes first. The other order leaves an object with nothing
+ * pointing at it, which nobody will ever find again in a shared bucket, and a
+ * failed delete of the row is recoverable while a lost object is not.
+ */
+export async function removeResourceAction(
+  formData: FormData,
+): Promise<ActionResult> {
+  const viewer = await requireViewer();
+  const resourceId = String(formData.get('resourceId') ?? '');
+  const lessonId = String(formData.get('lessonId') ?? '');
+
+  const key = await getTenantDb(viewer.tenant.id).run(async (scope) => {
+    const decision = await decideLessonAuthoring(
+      scope,
+      { tenantId: viewer.tenant.id, userId: viewer.userId },
+      lessonId,
+    );
+    if (!decision.allowed) return null;
+
+    const rows = await scope.tx
+      .select({ storageKey: lessonResources.storageKey })
+      .from(lessonResources)
+      .where(
+        and(
+          eq(lessonResources.tenantId, scope.tenantId),
+          eq(lessonResources.id, resourceId),
+          eq(lessonResources.lessonId, lessonId),
+        ),
+      )
+      .limit(1);
+
+    return rows[0]?.storageKey ?? null;
+  });
+
+  if (!key) return DENIED;
+
+  if (storageConfigured()) {
+    try {
+      await deleteObject(viewer.tenant.id, key);
+    } catch {
+      // An object that will not delete is worth knowing about, but it is not
+      // a reason to keep serving a recording an instructor has removed. The
+      // row goes either way and the object is left for the operator.
+    }
+  }
+
+  await getTenantDb(viewer.tenant.id).run(async (scope) => {
+    await scope.tx
+      .delete(lessonResources)
+      .where(
+        and(
+          eq(lessonResources.tenantId, scope.tenantId),
+          eq(lessonResources.id, resourceId),
+        ),
+      );
+
+    await scope.tx.insert(auditLog).values({
+      tenantId: scope.tenantId,
+      actorUserId: viewer.userId,
+      action: 'lesson_resource.removed',
+      targetType: 'lesson',
+      targetId: lessonId,
+      metadataJson: { resourceId, storageKey: key },
+    });
+  });
+
+  revalidatePath('/teach');
+  revalidatePath(`/lessons/${lessonId}`);
+  return { status: 'ok' };
 }

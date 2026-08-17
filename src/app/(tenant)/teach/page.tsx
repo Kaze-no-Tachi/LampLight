@@ -2,6 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import { getTenantDb } from '@/db/client';
 import { courseInstructors, courses, lessons, modules } from '@/db/schema';
+import { listResourcesForLessons } from '@/db/repositories/lessons';
 import { requireViewer } from '@/lib/auth/guards';
 import { TeachCourse } from './teach-course';
 
@@ -88,13 +89,33 @@ export default async function TeachPage() {
             )
             .orderBy(lessons.sortOrder);
 
+    // Including the reserved rows, which is the difference between this and
+    // what a student sees: an instructor whose upload failed has to be able to
+    // see that it failed.
+    const resources = await listResourcesForLessons(
+      scope,
+      allLessons.map((lesson) => lesson.id),
+    );
+
     return mine.map((course) => ({
       ...course,
       modules: allModules
         .filter((item) => item.courseId === course.id)
         .map((item) => ({
           ...item,
-          lessons: allLessons.filter((lesson) => lesson.moduleId === item.id),
+          lessons: allLessons
+            .filter((lesson) => lesson.moduleId === item.id)
+            .map((lesson) => ({
+              ...lesson,
+              recordings: resources
+                .filter((resource) => resource.lessonId === lesson.id)
+                .map((resource) => ({
+                  id: resource.id,
+                  filename: resource.filename,
+                  byteSize: resource.byteSize,
+                  isDownloadable: resource.isDownloadable,
+                })),
+            })),
         })),
     }));
   });

@@ -36,6 +36,13 @@ function recordingSigner(): { signer: StorageSigner; signed: string[] } {
         signed.push(request.key);
         return `https://storage.test/${request.key}?sig=fake&put=1`;
       },
+      async head(key) {
+        signed.push(key);
+        return { byteSize: 1, contentType: 'audio/wav' };
+      },
+      async remove(key) {
+        signed.push(key);
+      },
     },
   };
 }

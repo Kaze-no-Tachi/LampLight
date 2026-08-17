@@ -35,10 +35,19 @@ export type SignRequest = {
   readonly contentType?: string;
 };
 
+/** What an object turns out to be, once it is actually there. */
+export type ObjectFacts = {
+  readonly byteSize: number;
+  readonly contentType: string | null;
+};
+
 /** Signs a request against the bucket. Anything shaped like this will do. */
 export type StorageSigner = {
   signGet(request: SignRequest): Promise<string>;
   signPut(request: SignRequest): Promise<string>;
+  /** Null when the object is not there. Never throws for a missing key. */
+  head(key: string): Promise<ObjectFacts | null>;
+  remove(key: string): Promise<void>;
 };
 
 export class StorageAccessError extends Error {
@@ -105,6 +114,34 @@ export async function signObjectWrite(
   return { url, expiresAt: new Date(Date.now() + ttl * 1000) };
 }
 
+/**
+ * What is actually in the bucket at this key, or null.
+ *
+ * The point of asking is that a presigned PUT happens between the browser and
+ * the bucket, with the application not in the path. The application therefore
+ * has no idea whether the upload succeeded, and taking the browser's word for
+ * it is how a resource row ends up pointing at nothing: the browser can lie,
+ * crash, or lose its connection after reporting success.
+ */
+export async function statObject(
+  tenantId: string,
+  key: string,
+  signer: StorageSigner | null = null,
+): Promise<ObjectFacts | null> {
+  assertKeyBelongs(tenantId, key);
+  return (signer ?? createSigner()).head(key);
+}
+
+/** Deletes an object, after checking it is this institute's to delete. */
+export async function deleteObject(
+  tenantId: string,
+  key: string,
+  signer: StorageSigner | null = null,
+): Promise<void> {
+  assertKeyBelongs(tenantId, key);
+  await (signer ?? createSigner()).remove(key);
+}
+
 function assertKeyBelongs(tenantId: string, key: string): void {
   if (!keyBelongsToTenant(key, tenantId)) {
     // The message is for the log, not for a response. Callers turn this into
@@ -166,6 +203,38 @@ export function createSigner(): StorageSigner {
         new GetObjectCommand({ Bucket: bucket, Key: request.key }),
         { expiresIn: request.expiresInSeconds },
       );
+    },
+
+    async head(key) {
+      const { HeadObjectCommand } = await import('@aws-sdk/client-s3');
+
+      try {
+        const result = await (
+          await client
+        ).send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+
+        return {
+          byteSize: result.ContentLength ?? 0,
+          contentType: result.ContentType ?? null,
+        };
+      } catch (error) {
+        // A missing object is an ordinary answer here, not a failure: it is
+        // exactly what "the upload never arrived" looks like. Anything else
+        // (credentials, network, a bucket that does not exist) is a real
+        // problem and is rethrown rather than reported as absence.
+        const name = (error as { name?: string }).name;
+        const status = (error as { $metadata?: { httpStatusCode?: number } })
+          .$metadata?.httpStatusCode;
+        if (name === 'NotFound' || status === 404) return null;
+        throw error;
+      }
+    },
+
+    async remove(key) {
+      const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+      await (
+        await client
+      ).send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
     },
 
     async signPut(request) {

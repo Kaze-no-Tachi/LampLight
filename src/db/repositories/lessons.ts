@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { courses, lessonResources, lessons, modules } from '@/db/schema';
 import type { TenantScope } from '@/db/scope';
 
@@ -115,6 +115,16 @@ export type LessonResource = {
  * access predicate: this function answers "what objects belong to this
  * lesson", not "may this person have them".
  */
+/**
+ * The recordings a student may be offered.
+ *
+ * Only rows whose object is confirmed to exist, which is what a non-null
+ * byte_size means: the row is written before the upload so that a file which
+ * arrives always has something pointing at it, and the size is filled in
+ * afterwards from a HEAD against the bucket. Serving the reserved rows too
+ * would mean offering a lesson that plays silence, which is how this looked
+ * before uploads were finished.
+ */
 export async function listLessonResources(
   scope: TenantScope,
   lessonId: string,
@@ -132,6 +142,46 @@ export async function listLessonResources(
       and(
         eq(lessonResources.tenantId, scope.tenantId),
         eq(lessonResources.lessonId, lessonId),
+        isNotNull(lessonResources.byteSize),
+      ),
+    )
+    .orderBy(asc(lessonResources.sortOrder));
+}
+
+export type AuthoringResource = LessonResource & {
+  lessonId: string;
+  /** Null while an upload is reserved but unconfirmed. */
+  byteSize: number | null;
+};
+
+/**
+ * Every recording attached to these lessons, including unfinished uploads.
+ *
+ * For the teaching screen, which is the one place that should see a reserved
+ * row: an instructor whose upload failed needs to know it is there and be able
+ * to try again or remove it.
+ */
+export async function listResourcesForLessons(
+  scope: TenantScope,
+  lessonIds: string[],
+): Promise<AuthoringResource[]> {
+  if (lessonIds.length === 0) return [];
+
+  return scope.tx
+    .select({
+      id: lessonResources.id,
+      lessonId: lessonResources.lessonId,
+      kind: lessonResources.kind,
+      storageKey: lessonResources.storageKey,
+      filename: lessonResources.filename,
+      isDownloadable: lessonResources.isDownloadable,
+      byteSize: lessonResources.byteSize,
+    })
+    .from(lessonResources)
+    .where(
+      and(
+        eq(lessonResources.tenantId, scope.tenantId),
+        inArray(lessonResources.lessonId, lessonIds),
       ),
     )
     .orderBy(asc(lessonResources.sortOrder));

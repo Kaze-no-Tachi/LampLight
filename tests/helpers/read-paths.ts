@@ -29,6 +29,7 @@ import {
   findLessonWithCourse,
   listLessonResources,
   listLessonsForCourse,
+  listResourcesForLessons,
 } from '@/db/repositories/lessons';
 import type { TenantScope } from '@/db/scope';
 import {
@@ -209,6 +210,28 @@ export const READ_PATHS: ReadPath[] = [
         courseBySlug(subject, 'old-testament-survey'),
       );
       const rows = await listLessonResources(scope, lesson.id);
+      const resourceIds = new Set(
+        subject.courses.flatMap((course) =>
+          course.modules.flatMap((courseModule) =>
+            courseModule.lessons.map((entry) => entry.resourceId),
+          ),
+        ),
+      );
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        resourceIds,
+      );
+    },
+  },
+  {
+    name: 'lessons.listResourcesForLessons',
+    async run(scope, subject) {
+      // The teaching screen's read, which unlike the student one also returns
+      // uploads that were never confirmed. Same isolation rule: asking with
+      // another institute's lesson ids must return nothing.
+      const rows = await listResourcesForLessons(scope, [
+        ...lessonIds(subject),
+      ]);
       const resourceIds = new Set(
         subject.courses.flatMap((course) =>
           course.modules.flatMap((courseModule) =>
