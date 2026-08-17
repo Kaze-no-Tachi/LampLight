@@ -16,6 +16,9 @@ import { GRACE_HOST, PEOPLE, signIn, url } from '../helpers/browser';
  * a real signed read, rather than being skipped where it matters.
  */
 
+/** The seeded course these tests edit. It has the modules and lessons they need. */
+const COURSE_WITH_LESSONS = 'Old Testament Survey';
+
 /** A short real WAV, built here so the suite carries no binary fixtures. */
 function wav(seconds = 3, hz = 440): Buffer {
   const rate = 8_000;
@@ -67,9 +70,15 @@ const PDF = Buffer.from(
  */
 async function openCourseEditor(page: Page): Promise<string> {
   await page.goto(url(GRACE_HOST, '/teach'));
+
+  // A named course, not the first one on the page. These tests need a course
+  // that has lessons in it, and "first" is whatever sorts earliest by title,
+  // which changed the moment another spec started creating courses of its own.
+  // Reading where it actually is beats assuming, and naming it beats both.
   await page
-    .getByRole('link', { name: /edit description and syllabus/i })
+    .locator('section', { hasText: COURSE_WITH_LESSONS })
     .first()
+    .getByRole('link', { name: /edit description and syllabus/i })
     .click();
   await page.waitForURL('**/teach/courses/**');
 

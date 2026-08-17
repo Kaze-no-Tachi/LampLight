@@ -2,6 +2,7 @@ import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import * as catalog from '@/db/repositories/catalog';
+import * as catalogAdmin from '@/db/repositories/catalog-admin';
 import * as domains from '@/db/repositories/domains';
 import * as entitlements from '@/db/repositories/entitlements';
 import * as lessons from '@/db/repositories/lessons';
@@ -28,6 +29,7 @@ import { READ_PATHS } from '../helpers/read-paths';
 
 const REPOSITORY_MODULES: Record<string, Record<string, unknown>> = {
   catalog,
+  'catalog-admin': catalogAdmin,
   domains,
   entitlements,
   lessons,

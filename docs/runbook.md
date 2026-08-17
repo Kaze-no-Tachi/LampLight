@@ -299,8 +299,23 @@ Pushing to `main` runs CI. If verify passes, two images are published to GHCR
 as the Dokploy pre-deploy command:
 
 ```bash
+docker compose -f docker-compose.prod.yml pull && \
 docker compose -f docker-compose.prod.yml --profile tools run --rm migrate
 ```
+
+**The `pull` is not redundant, and leaving it out is why a deploy can appear
+to succeed while serving the previous release.** Dokploy redeploys by bringing
+the stack up again, and `docker compose up` does not re-fetch a tag it already
+has locally. `:latest` moves in the registry, the local `:latest` does not, and
+containers are recreated from the old image with no error anywhere. Pulling
+first also means the migrator that runs is the one belonging to the release
+about to start, rather than the one from last time.
+
+Once first light is behind you, prefer pinning `LAMPLIGHT_IMAGE` and
+`LAMPLIGHT_MIGRATOR_IMAGE` to a commit sha instead. A tag that never moves
+cannot be stale, the deployed version is legible from the environment, and
+rolling back is editing one variable rather than working out what `:latest`
+meant an hour ago.
 
 This is not a style preference. Migrating from the application entrypoint means
 every replica races the migration table on startup, and a rollback means a

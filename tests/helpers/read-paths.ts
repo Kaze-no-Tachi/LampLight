@@ -5,6 +5,11 @@ import {
   listPublishedPrograms,
 } from '@/db/repositories/catalog';
 import {
+  listAssignableStaff,
+  listCoursesForAdmin,
+  listProgramsForAdmin,
+} from '@/db/repositories/catalog-admin';
+import {
   findMembership,
   findMembershipDetail,
   hasActiveEntitlement,
@@ -401,6 +406,50 @@ export const READ_PATHS: ReadPath[] = [
       const asked = Array.isArray(questions) && questions.length > 0;
       const subjectAsks = subject.signupMode === 'open';
       return asked === subjectAsks ? [subject.id] : [];
+    },
+  },
+  {
+    name: 'catalog-admin.listCoursesForAdmin',
+    async run(scope, subject) {
+      // The admin catalogue deliberately shows unpublished courses, which
+      // makes it a wider read than the student-facing one and therefore worth
+      // checking harder: a missing tenant filter here exposes another
+      // institute's unreleased work rather than its public catalogue.
+      const rows = await listCoursesForAdmin(scope);
+      const subjectIds = new Set(subject.courses.map((course) => course.id));
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        subjectIds,
+      );
+    },
+  },
+  {
+    name: 'catalog-admin.listProgramsForAdmin',
+    async run(scope, subject) {
+      const rows = await listProgramsForAdmin(scope);
+      const subjectIds = new Set(subject.programs.map((program) => program.id));
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        subjectIds,
+      );
+    },
+  },
+  {
+    name: 'catalog-admin.listAssignableStaff',
+    async run(scope, subject) {
+      // By user id, and the shared student is irrelevant here because they are
+      // a student at both institutes and this list is staff only. Leaking it
+      // would hand one institute the names and addresses of another's staff.
+      const rows = await listAssignableStaff(scope);
+      const subjectUserIds = new Set(
+        Object.values(subject.users)
+          .filter((user) => user.role !== 'student')
+          .map((user) => user.id),
+      );
+      return ownedBySubject(
+        rows.map((row) => row.userId),
+        subjectUserIds,
+      );
     },
   },
 ];

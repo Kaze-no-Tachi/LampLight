@@ -177,7 +177,7 @@ test.describe('playing a lecture', () => {
     // player on purpose, so loading the settings page directly would prove
     // nothing about the shortcut and everything about how Playwright
     // navigates. The first version of this test made exactly that mistake.
-    await page.getByRole('link', { name: 'Settings', exact: true }).click();
+    await page.getByRole('link', { name: 'Branding', exact: true }).click();
     await page.waitForURL('**/settings/branding');
 
     const field = page.locator('input:not([type])').first();

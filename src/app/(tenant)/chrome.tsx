@@ -87,13 +87,26 @@ export function SiteHeader({
           </Link>
         ) : null}
 
+        {/* Every admin screen, not a sample of them. Domains and Signup were
+            built and linked from nowhere, so the only way to reach them was to
+            know the URL, and Catalogue is where courses come from at all. A
+            screen nobody can navigate to may as well not exist. */}
         {viewer?.role === 'admin' ? (
           <>
+            <Link href="/settings/catalog" className="text-sm hover:underline">
+              Catalogue
+            </Link>
             <Link href="/settings/people" className="text-sm hover:underline">
               People
             </Link>
             <Link href="/settings/branding" className="text-sm hover:underline">
-              Settings
+              Branding
+            </Link>
+            <Link href="/settings/domains" className="text-sm hover:underline">
+              Domains
+            </Link>
+            <Link href="/settings/signup" className="text-sm hover:underline">
+              Signup
             </Link>
           </>
         ) : null}
