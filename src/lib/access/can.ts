@@ -40,6 +40,8 @@ export type Actor = {
 };
 
 export type Action =
+  /** Reach the teaching area at all. Not about any particular course. */
+  | 'teach:view'
   /** Bring a course into existence. Not about any particular course. */
   | 'course:create'
   /** Change a course's title, description, attachments, or its lessons. */
@@ -80,6 +82,18 @@ export async function can(
   resource: Resource = { kind: 'none' },
 ): Promise<Verdict> {
   switch (action) {
+    case 'teach:view':
+      // Staff, whichever kind. An instructor only sees their own assignments
+      // once inside, but reaching the area at all does not depend on having
+      // one yet: a newly assigned instructor with nothing to teach still gets
+      // the "not assigned to anything" page, not a 404.
+      return actor.role === 'admin' || actor.role === 'instructor'
+        ? {
+            allowed: true,
+            reason: actor.role === 'admin' ? 'tenant-admin' : 'instructor',
+          }
+        : NOT_A_MEMBER;
+
     case 'course:create':
       // Deciding the institute teaches a thing at all is the institute's call.
       // An instructor edits what they are given.

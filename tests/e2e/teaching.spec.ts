@@ -78,9 +78,9 @@ async function openCourseEditor(page: Page): Promise<string> {
   await page
     .locator('section', { hasText: COURSE_WITH_LESSONS })
     .first()
-    .getByRole('link', { name: /edit description and syllabus/i })
+    .getByRole('link', { name: /^Manage lessons$/ })
     .click();
-  await page.waitForURL('**/teach/courses/**');
+  await page.waitForURL('**/courses/**/edit');
 
   const href = await page
     .getByRole('link', { name: /see what students see/i })
@@ -259,5 +259,34 @@ test.describe('who may teach', () => {
       headers: { host: GRACE_HOST },
     });
     expect(catalogue.status(), 'the course itself is public').toBe(200);
+  });
+});
+
+test.describe('the teaching summary', () => {
+  test('shows what is coming, with nothing that leads to a 404', async ({
+    page,
+  }) => {
+    // Round 2, chunk 4: /teach stopped being the workspace and became a
+    // summary, with Grading, Assessments and Roster shown honestly as not
+    // built rather than left off or wired to a page that does not exist.
+    await signIn(page, PEOPLE.instructor);
+    await page.goto(url(GRACE_HOST, '/teach'));
+
+    const card = page
+      .locator('section', { hasText: COURSE_WITH_LESSONS })
+      .first();
+
+    for (const label of ['Grading', 'Assessments', 'Roster']) {
+      const panel = card.locator('div', { hasText: label }).last();
+      await expect(panel).toContainText(/coming soon/i);
+      await expect(panel.getByRole('link')).toHaveCount(0);
+    }
+
+    // The one link this card offers actually goes somewhere, not to a 404.
+    await card.getByRole('link', { name: /^Manage lessons$/ }).click();
+    await page.waitForURL('**/courses/**/edit');
+    await expect(
+      page.getByRole('heading', { name: COURSE_WITH_LESSONS }),
+    ).toBeVisible();
   });
 });

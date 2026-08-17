@@ -17,6 +17,7 @@ import {
   decideModuleAuthoring,
   type AuthorGrant,
 } from '@/lib/access/authoring';
+import { can } from '@/lib/access/can';
 import { withScope } from '../helpers/scope';
 
 /**
@@ -262,5 +263,42 @@ describe('the application layer refuses on its own', () => {
     );
 
     expect(decision.allowed).toBe(false);
+  });
+});
+
+/**
+ * can()'s teach:view (round 2, chunk 4), which replaced the inline
+ * `viewer.role === 'student'` comparison /teach used to have. Not about any
+ * particular course, unlike everything else in this file: an instructor with
+ * nothing assigned yet still reaches the area and sees the empty state,
+ * which is why this checks the role gate alone rather than any course.
+ */
+describe('teach:view', () => {
+  function actor(role: 'student' | 'instructor' | 'admin' | null) {
+    return { tenantId: GRACE.id, userId: userByKey(GRACE, 'admin').id, role };
+  }
+
+  it('allows an admin and an instructor', async () => {
+    const admin = await getTenantDb(GRACE.id).run((scope) =>
+      can(scope, actor('admin'), 'teach:view'),
+    );
+    expect(admin.allowed).toBe(true);
+
+    const instructor = await getTenantDb(GRACE.id).run((scope) =>
+      can(scope, actor('instructor'), 'teach:view'),
+    );
+    expect(instructor.allowed).toBe(true);
+  });
+
+  it('refuses a student and a visitor with no membership at all', async () => {
+    const student = await getTenantDb(GRACE.id).run((scope) =>
+      can(scope, actor('student'), 'teach:view'),
+    );
+    expect(student.allowed).toBe(false);
+
+    const noMembership = await getTenantDb(GRACE.id).run((scope) =>
+      can(scope, actor(null), 'teach:view'),
+    );
+    expect(noMembership.allowed).toBe(false);
   });
 });
