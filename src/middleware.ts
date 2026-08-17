@@ -32,6 +32,16 @@ const TENANT_SLUG_HINT_HEADER = 'x-lamplight-slug-hint';
  */
 const TENANT_PATH_HEADER = 'x-lamplight-path';
 
+/**
+ * Paths the apex serves from its own route group, keyed by the path a visitor
+ * types. Both sides of each pair are owned by tenants under their plain names,
+ * which is why the apex versions need different filenames and a rewrite.
+ */
+const APEX_ROUTES: Record<string, string> = {
+  '/': '/platform-home',
+  '/sign-in': '/platform-sign-in',
+};
+
 export const config = {
   // Static assets and image optimisation never need tenant context, and
   // running this on every one of them is wasted work on the hot path.
@@ -72,17 +82,19 @@ export function middleware(request: NextRequest): NextResponse {
     headers.set(TENANT_SLUG_HINT_HEADER, classification.slug);
   }
 
-  // The apex and a tenant both want to own "/", and Next.js will not let two
-  // route groups claim the same path. So the apex home is a real route that
-  // the apex is rewritten onto, leaving "/" free for the tenant. The rewrite
-  // is internal, so the visitor's URL stays as it was.
+  // The apex and a tenant both want to own "/" and "/sign-in", and Next.js
+  // will not let two route groups claim the same path. So each apex page is a
+  // real route that the apex is rewritten onto, leaving the plain paths free
+  // for tenants. The rewrite is internal, so the visitor's URL stays as it was,
+  // which matters for "/sign-in": that is where somebody will look for it.
   //
-  // The rewrite is a routing convenience, not a security boundary: the page it
+  // The rewrite is a routing convenience, not a security boundary: each page it
   // lands on guards itself with requireApex, because middleware cannot reach
   // the database and a guard beside the page cannot drift away from it.
-  if (classification.kind === 'apex' && request.nextUrl.pathname === '/') {
+  const apexRewrite = APEX_ROUTES[request.nextUrl.pathname];
+  if (classification.kind === 'apex' && apexRewrite) {
     const url = request.nextUrl.clone();
-    url.pathname = '/platform-home';
+    url.pathname = apexRewrite;
     return NextResponse.rewrite(url, { request: { headers } });
   }
 

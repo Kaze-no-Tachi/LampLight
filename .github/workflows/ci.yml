@@ -128,7 +128,7 @@ jobs:
           DATABASE_ADMIN_URL: ''
         run: |
           pnpm build 2>&1 | tee /tmp/build.log
-          for route in /superadmin /platform-home; do
+          for route in /superadmin /platform-home /platform-sign-in; do
             grep -qE "ƒ ${route}\s" /tmp/build.log \
               || { echo "FAIL: ${route} is not dynamic, so it can be prerendered"; exit 1; }
           done

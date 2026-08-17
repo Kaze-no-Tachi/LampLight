@@ -141,6 +141,25 @@ test.describe('tenant resolution', () => {
       expect(response.status()).toBe(404);
     }
   });
+
+  test('gives the operator somewhere to sign in', async ({ request }) => {
+    // THE GAP THIS CLOSES. /sign-in belongs to the tenant route group and
+    // calls requireTenant, so on the apex it was a 404 and the platform had no
+    // front door at all: an operator could exist in the database with nowhere
+    // to type their password, while the console answered 404 the way it
+    // answers a stranger. Nothing failed, which is why it survived to a
+    // deployment.
+    const apex = await request.get('/sign-in', { headers: { host: APEX } });
+    expect(apex.status(), 'the apex must offer a sign-in page').toBe(200);
+    expect(await apex.text()).toContain('Operator sign in');
+
+    // And the institutes keep their own, which is a different page.
+    for (const host of [GRACE, CORNERSTONE]) {
+      const response = await request.get('/sign-in', { headers: { host } });
+      expect(response.status(), `${host} keeps its own sign-in`).toBe(200);
+      expect(await response.text()).not.toContain('Operator sign in');
+    }
+  });
 });
 
 test.describe('a session does not cross institutes', () => {

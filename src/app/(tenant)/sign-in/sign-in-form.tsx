@@ -12,7 +12,21 @@ import { useState, useTransition } from 'react';
  * account-existence oracle that the whole signup design exists to close, this
  * time on the sign-in form.
  */
-export function SignInForm({ next }: { next: string }) {
+export function SignInForm({
+  next,
+  resetHref = '/reset-password',
+}: {
+  next: string;
+  /**
+   * Where "forgotten your password" goes, or null for nowhere.
+   *
+   * Password reset belongs to an institute: the link is mailed from that
+   * institute and lands on its hostname. The platform apex has no institute,
+   * so the operator sign-in passes null rather than offering a link that would
+   * 404 on the one page somebody uses when they are already stuck.
+   */
+  resetHref?: string | null;
+}) {
   const router = useRouter();
   const [failed, setFailed] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -76,12 +90,14 @@ export function SignInForm({ next }: { next: string }) {
         </p>
       )}
 
-      <Link
-        href="/reset-password"
-        className="text-muted-foreground text-sm underline"
-      >
-        Forgotten your password?
-      </Link>
+      {resetHref && (
+        <Link
+          href={resetHref}
+          className="text-muted-foreground text-sm underline"
+        >
+          Forgotten your password?
+        </Link>
+      )}
     </form>
   );
 }
