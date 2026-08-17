@@ -223,5 +223,18 @@ jobs:
         # Dokploy pulls and restarts. The webhook runs the migrator first as a
         # pre-deploy command, so a release that needs a schema change never
         # starts serving against the old schema. See docs/runbook.md.
-        if: vars.DOKPLOY_DEPLOY_WEBHOOK != ''
-        run: curl -fsS -X POST "${{ vars.DOKPLOY_DEPLOY_WEBHOOK }}"
+        #
+        # Fired from here rather than from a git webhook on Dokploy's side, and
+        # the difference is not cosmetic. A push-triggered webhook fires while
+        # this job is still building, so Dokploy would redeploy and pull the
+        # PREVIOUS :latest, reporting success while shipping the last release.
+        # This step runs after both images are published, so the tag it tells
+        # Dokploy to pull is the one that was just built.
+        #
+        # A secret rather than a variable: the URL carries its own token, and
+        # anybody holding it can trigger a production deploy. Mapped into env
+        # first because the secrets context is not available in an `if`.
+        env:
+          HOOK: ${{ secrets.DOKPLOY_DEPLOY_WEBHOOK }}
+        if: env.HOOK != ''
+        run: curl -fsS -X POST "$HOOK"
