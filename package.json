@@ -20,6 +20,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:reset": "tsx src/db/reset.ts",
+    "cf:setup": "tsx scripts/cf-setup.ts",
+    "cf:probe": "tsx scripts/cf-probe.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run tests/unit",

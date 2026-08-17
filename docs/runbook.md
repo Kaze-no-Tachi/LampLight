@@ -63,7 +63,26 @@ install -m 600 ~/.cloudflared/<UUID>.json /srv/lamplight/cloudflared/tunnel.json
 Put the UUID into `docker/cloudflared/config.yml` in place of
 `REPLACE_WITH_TUNNEL_UUID`.
 
-Then, in the platform Cloudflare zone:
+Then, in the platform Cloudflare zone, run:
+
+```bash
+CLOUDFLARE_ZONE_ID=... CLOUDFLARE_API_TOKEN=... \
+CLOUDFLARE_SAAS_FALLBACK_ORIGIN=origin.<apex> \
+pnpm cf:setup --target <UUID>.cfargotunnel.com
+```
+
+That creates the proxied `origin.<apex>` record and sets the zone's fallback
+origin to it. It is idempotent, so re-run it to move the origin later, and
+`--dry-run` prints what it would change without changing anything. The token
+needs Zone → SSL and Certificates → Edit, Zone → DNS → Edit, and Zone →
+Zone → Read, on this zone only.
+
+Omit `--target` and it uses `192.0.2.1`, which is reserved for documentation
+and routes nowhere. That is the right placeholder before a tunnel exists: the
+record has to be present and orange-clouded before Cloudflare will accept it as
+a fallback origin.
+
+To do it by hand instead:
 
 1. Create a CNAME: `origin.<apex>` to `<UUID>.cfargotunnel.com`.
 2. **Set it to proxied (orange cloud).** A DNS-only record here produces
@@ -71,6 +90,12 @@ Then, in the platform Cloudflare zone:
    single most common way to get this setup wrong.
 3. SSL/TLS to Custom Hostnames, set `origin.<apex>` as the fallback origin, and
    wait for its status to read Active.
+
+**Checking the whole path works:** `pnpm cf:probe <a-hostname-you-control>`
+creates a custom hostname, polls until Cloudflare issues the certificate
+validation record, prints every DNS record an institute would be shown, and
+deletes it again. It goes through the same client the application uses, so a
+green run is evidence about the application rather than about curl.
 
 ### 1.4 The application
 

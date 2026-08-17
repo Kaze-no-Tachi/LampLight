@@ -76,8 +76,15 @@ async function main(): Promise<void> {
   // The certificate record does not exist at creation, so a probe that looked
   // once would report the same incomplete list the settings page used to show
   // and call it correct. Polling for it is the point.
+  //
+  // How long it takes varies. A fresh hostname had one within five seconds; a
+  // hostname that had been created and deleted several times over a few
+  // minutes still had none after a minute, which looks like the certificate
+  // authority rate limiting repeats of the same name rather than anything
+  // wrong. Either way an institute cannot be told "it will be there in a
+  // moment" as though that were a guarantee.
   console.log('\nwaiting for the certificate record');
-  for (const delay of [5_000, 10_000, 20_000]) {
+  for (const delay of [5_000, 10_000, 20_000, 30_000]) {
     await new Promise((resolve) => setTimeout(resolve, delay));
     const fetched = await client.get(created.id);
     const purposes = fetched.records.map((record) => record.purpose);
