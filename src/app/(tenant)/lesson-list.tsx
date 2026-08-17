@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import { ConfirmModal } from './confirm-modal';
 import {
   archiveLessonAction,
   reorderLessonAction,
@@ -122,6 +123,7 @@ function StaffLessonRow({ lesson }: { lesson: StaffLesson }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
 
   function publish() {
     const data = new FormData();
@@ -136,20 +138,13 @@ function StaffLessonRow({ lesson }: { lesson: StaffLesson }) {
   }
 
   function archive() {
-    if (
-      !window.confirm(
-        `Archive "${lesson.title}"? This cannot be undone from here.`,
-      )
-    ) {
-      return;
-    }
-
     const data = new FormData();
     data.set('lessonId', lesson.id);
 
     startTransition(async () => {
       const result = await archiveLessonAction(data);
       setError(result.status === 'error' ? result.message : null);
+      setConfirmingArchive(false);
       if (result.status === 'ok') router.refresh();
     });
   }
@@ -219,7 +214,7 @@ function StaffLessonRow({ lesson }: { lesson: StaffLesson }) {
           <button
             type="button"
             disabled={pending}
-            onClick={archive}
+            onClick={() => setConfirmingArchive(true)}
             className="text-destructive rounded-md border px-2 py-1 text-xs disabled:opacity-60"
           >
             Archive
@@ -227,6 +222,15 @@ function StaffLessonRow({ lesson }: { lesson: StaffLesson }) {
         </div>
       </div>
       {error && <p className="text-destructive text-xs">{error}</p>}
+
+      <ConfirmModal
+        open={confirmingArchive}
+        title="Archive this lesson?"
+        body={`Archive "${lesson.title}"? This cannot be undone from here.`}
+        pending={pending}
+        onConfirm={archive}
+        onCancel={() => setConfirmingArchive(false)}
+      />
     </li>
   );
 }

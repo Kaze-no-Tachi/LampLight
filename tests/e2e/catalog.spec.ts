@@ -287,12 +287,15 @@ test.describe('adding lessons', () => {
 
     const lesson = `Visiting the sick ${Date.now()}`;
     await page.getByRole('button', { name: /^Add lesson$/ }).click();
-    await page.locator('dialog input[name="title"]').fill(lesson);
-    await page.locator('dialog input[name="isFreePreview"]').check();
-    await page
-      .locator('dialog')
-      .getByRole('button', { name: /^Add lesson$/ })
-      .click();
+    const addLessonDialog = page.getByRole('dialog');
+    await addLessonDialog.locator('input[name="title"]').fill(lesson);
+    await addLessonDialog.locator('input[name="isFreePreview"]').check();
+    await addLessonDialog.getByRole('button', { name: /^Add lesson$/ }).click();
+    // The modal's own exit animation still covers the page for a moment
+    // after submit; waiting for it to actually leave the DOM is what keeps
+    // the next click from landing on a fading backdrop instead of the row
+    // beneath it.
+    await expect(addLessonDialog).toBeHidden();
 
     await expect(page.locator('main')).toContainText(lesson);
 
@@ -496,11 +499,13 @@ test.describe('the unified course editor', () => {
     // old flow made you.
     for (const name of ['Lesson One', 'Lesson Two', 'Lesson Three']) {
       await page.getByRole('button', { name: /^Add lesson$/ }).click();
-      await page.locator('dialog input[name="title"]').fill(name);
-      await page
-        .locator('dialog')
-        .getByRole('button', { name: /^Add lesson$/ })
-        .click();
+      const dialog = page.getByRole('dialog');
+      await dialog.locator('input[name="title"]').fill(name);
+      await dialog.getByRole('button', { name: /^Add lesson$/ }).click();
+      // Otherwise the next iteration's trigger click can resolve to two
+      // "Add lesson" buttons at once: the real trigger and the previous
+      // dialog's submit button, still mid exit-animation in the DOM.
+      await expect(dialog).toBeHidden();
       await expect(page.locator('main')).toContainText(name);
     }
 
@@ -531,16 +536,23 @@ test.describe('the unified course editor', () => {
     await expect(firstRow).toContainText('draft');
 
     // Archive a lesson: it leaves the list entirely, not just its state.
-    page.once('dialog', (dialog) => dialog.accept());
     await page
       .locator('li', { hasText: 'Lesson Three' })
       .getByRole('button', { name: /^Archive$/ })
       .click();
+    const archiveLessonDialog = page.getByRole('dialog');
+    await archiveLessonDialog
+      .getByRole('button', { name: /^Archive$/ })
+      .click();
+    await expect(archiveLessonDialog).toBeHidden();
     await expect(page.locator('main')).not.toContainText('Lesson Three');
 
     // Archive the course itself. The one-way door, admin only.
-    page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: /^Archive this course$/ }).click();
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: /^Archive$/ })
+      .click();
     await page.waitForURL('**/teach');
 
     // Gone from the admin catalogue, same as the public one.
