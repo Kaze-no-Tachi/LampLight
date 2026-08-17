@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import Link from 'next/link';
 import { addLessonAction, addModuleAction } from './actions';
 import { LessonRow, type Lesson } from './lesson-row';
 
@@ -12,7 +13,15 @@ export function TeachCourse({ course }: { course: Course }) {
 
   return (
     <section className="flex flex-col gap-4 rounded-lg border p-4">
-      <h2 className="text-lg font-semibold tracking-tight">{course.title}</h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <h2 className="text-lg font-semibold tracking-tight">{course.title}</h2>
+        <Link
+          href={`/teach/courses/${course.id}`}
+          className="text-muted-foreground text-sm underline underline-offset-4"
+        >
+          Edit description and syllabus
+        </Link>
+      </div>
 
       {course.modules.map((courseModule) => (
         <ModuleBlock

@@ -40,6 +40,22 @@ export const AUDIO_TYPES = [
  */
 export const MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
 
+/**
+ * What a handout may be.
+ *
+ * PDF and plain text only, and no Office formats, which is a decision rather
+ * than an oversight: a .docx is a zip an institute's students would download
+ * and open in a program with a macro engine, and a bible institute's audience
+ * is exactly the one that gets targeted that way. PDF is what a syllabus is
+ * anyway. An institute with a Word file exports it, once.
+ */
+export const DOCUMENT_TYPES = ['application/pdf', 'text/plain'] as const;
+
+export type UploadKind = 'audio' | 'document';
+
+/** Documents are small. A syllabus that is 25 MB is a scan nobody can read. */
+export const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
+
 export type UploadCheck =
   { ok: true; contentType: string } | { ok: false; message: string };
 
@@ -52,7 +68,13 @@ export type UploadCheck =
 export function checkUpload(params: {
   contentType: string;
   byteSize: number;
+  /** Audio unless said otherwise, which is what most uploads are. */
+  kind?: UploadKind;
 }): UploadCheck {
+  const kind = params.kind ?? 'audio';
+  const allowed: readonly string[] =
+    kind === 'audio' ? AUDIO_TYPES : DOCUMENT_TYPES;
+  const limit = kind === 'audio' ? MAX_UPLOAD_BYTES : MAX_DOCUMENT_BYTES;
   // Browsers send "audio/mpeg" but also sometimes "audio/mpeg; charset=..."
   // and, on Windows for an unfamiliar extension, an empty string.
   const type = params.contentType.split(';')[0]?.trim().toLowerCase() ?? '';
@@ -60,15 +82,19 @@ export function checkUpload(params: {
   if (!type) {
     return {
       ok: false,
-      message:
-        'Your browser did not say what kind of file that is. Try an mp3 or m4a.',
+      message: `Your browser did not say what kind of file that is. Try ${
+        kind === 'audio' ? 'an mp3 or m4a' : 'a PDF'
+      }.`,
     };
   }
 
-  if (!(AUDIO_TYPES as readonly string[]).includes(type)) {
+  if (!allowed.includes(type)) {
     return {
       ok: false,
-      message: `${type} is not a kind of audio this accepts. Use mp3, m4a, wav, or ogg.`,
+      message:
+        kind === 'audio'
+          ? `${type} is not a kind of audio this accepts. Use mp3, m4a, wav, or ogg.`
+          : `${type} is not a kind of document this accepts. Use a PDF.`,
     };
   }
 
@@ -76,11 +102,11 @@ export function checkUpload(params: {
     return { ok: false, message: 'That file appears to be empty.' };
   }
 
-  if (params.byteSize > MAX_UPLOAD_BYTES) {
+  if (params.byteSize > limit) {
     return {
       ok: false,
       message: `That file is ${formatBytes(params.byteSize)}. The limit is ${formatBytes(
-        MAX_UPLOAD_BYTES,
+        limit,
       )}.`,
     };
   }

@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRef, useState, useTransition } from 'react';
 import { checkUpload, formatBytes } from '@/lib/media/uploads';
 import {
@@ -21,6 +22,8 @@ export type Lesson = {
   title: string;
   isFreePreview: boolean;
   recordings: Recording[];
+  /** Absent on the lesson editor, which is already the page it would link to. */
+  editable?: boolean;
 };
 
 /**
@@ -116,7 +119,16 @@ export function LessonRow({
   return (
     <li className="flex flex-col gap-2 border-b py-2 last:border-b-0">
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <span>{lesson.title}</span>
+        {lesson.editable ? (
+          <Link
+            href={`/teach/lessons/${lesson.id}`}
+            className="underline-offset-4 hover:underline"
+          >
+            {lesson.title}
+          </Link>
+        ) : (
+          <span>{lesson.title}</span>
+        )}
         {lesson.isFreePreview && (
           <span className="text-muted-foreground rounded-full border px-2 py-0.5 text-xs">
             Free preview

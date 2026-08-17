@@ -107,6 +107,7 @@ export default async function TeachPage() {
             .filter((lesson) => lesson.moduleId === item.id)
             .map((lesson) => ({
               ...lesson,
+              editable: true,
               recordings: resources
                 .filter((resource) => resource.lessonId === lesson.id)
                 .map((resource) => ({
