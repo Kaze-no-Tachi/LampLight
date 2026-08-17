@@ -75,6 +75,15 @@ waits for `migrate` to exit successfully. The box exposes nothing but SSH, and
   `/teach/courses/[courseId]`; chunk 4 is what moves it to a summary plus
   "Manage lessons" into the new editor, after which `/teach/courses/[courseId]`
   and `/settings/catalog` are dead code chunk 5 deletes.
+- UI library decision, not yet started: the user wants screens rebuilt on
+  React Suite (rsuite), modals included. Nothing uses it yet; every screen so
+  far is plain Tailwind plus native elements (`<dialog>` for
+  `AddLessonDialog`, `window.confirm` for the two archive buttons). This is a
+  cross-cutting adoption across the whole app, not scoped to any one round-2
+  chunk, so it needs its own plan before it starts: which components rsuite
+  replaces first, whether Tailwind and rsuite's own styling coexist or one
+  wins, and whether native `<dialog>`/`confirm` get swapped for rsuite's
+  `Modal` as part of the same pass.
 - Roll the Cloudflare API token and the Brevo API key, both exposed in an
   earlier session transcript.
 - R2 bucket wants recreating in ENAM: it was made in APAC and location is fixed
