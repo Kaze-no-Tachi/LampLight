@@ -36,6 +36,25 @@ services:
       TENANT_SUBDOMAIN_ROOT: ${TENANT_SUBDOMAIN_ROOT}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL}
+      SELF_SERVE_SIGNUP: ${SELF_SERVE_SIGNUP:-false}
+      # MAIL IS NOT OPTIONAL IN PRODUCTION, AND THIS FILE USED TO OMIT IT.
+      #
+      # src/env.ts refuses to serve without SMTP_HOST and MAIL_FROM, because
+      # account activation ends at a link sent to an address and an instance
+      # that cannot send one accepts signups into a void. The stack as written
+      # would therefore have failed to boot on its first deploy, with an error
+      # about environment configuration rather than about mail.
+      MAIL_TRANSPORT: ${MAIL_TRANSPORT:-auto}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      MAIL_FROM: ${MAIL_FROM}
+      # Shared with the sweep service below. Unset means the endpoint 404s and
+      # nothing periodic runs, which is a working site with domains that never
+      # finish verifying.
+      DOMAIN_SWEEP_SECRET: ${DOMAIN_SWEEP_SECRET}
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
       CLOUDFLARE_ZONE_ID: ${CLOUDFLARE_ZONE_ID}
       CLOUDFLARE_SAAS_FALLBACK_ORIGIN: ${CLOUDFLARE_SAAS_FALLBACK_ORIGIN}
@@ -107,6 +126,31 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  # THE THING THAT MAKES THE SWEEP ENDPOINT RUN.
+  #
+  # /api/platform/sweep has existed since phase 3 and nothing called it, so on
+  # a real deployment a custom domain would sit unverified until an admin
+  # happened to open the settings page, and expired invitations would never be
+  # deleted. The endpoint was built to be driven by cron (ADR 0004); this is
+  # the cron, kept in the stack so it is deployed and versioned with everything
+  # else rather than living in somebody's crontab.
+  #
+  # A shell loop rather than a cron daemon: it is three lines, it logs to
+  # `docker compose logs sweep` like every other service, and there is no
+  # second place to look when it stops.
+  sweep:
+    image: curlimages/curl:8.11.1
+    restart: unless-stopped
+    environment:
+      SWEEP_INTERVAL_SECONDS: ${SWEEP_INTERVAL_SECONDS:-900}
+      DOMAIN_SWEEP_SECRET: ${DOMAIN_SWEEP_SECRET}
+    volumes:
+      - ./docker/sweep/run.sh:/run.sh:ro
+    entrypoint: ['sh', '/run.sh']
+    depends_on:
+      app:
+        condition: service_healthy
 
   cloudflared:
     image: cloudflare/cloudflared:latest

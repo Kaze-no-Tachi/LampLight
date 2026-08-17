@@ -108,9 +108,23 @@ from running on every container start.
   live in Dokploy's environment store, never in the repository.
 - Pre-deploy command: see [section 2](#2-deploy).
 
-Generate the two database passwords and the auth secret with
+Generate the two database passwords, the auth secret, and the sweep secret with
 `openssl rand -base64 32`. They differ from each other and from every other
 environment.
+
+**Check the environment before deploying it**, on a machine with the repository
+checked out:
+
+```bash
+pnpm env:check /path/to/production.env
+```
+
+It runs the same schema and the same production assertions the application runs
+at boot, in a process holding only that file's variables, and tells you which
+variable is wrong. The alternative is finding out from a container that will
+not stay up while you are mid-deploy. It also flags values that look like they
+were copied from a development environment, and warns when
+`DOMAIN_SWEEP_SECRET` is unset.
 
 ---
 
@@ -206,12 +220,21 @@ to 24 hours of enrollments and payments gone. **Before design partners load
 real students, either shorten the interval to a few hours or add WAL archiving
 for point-in-time recovery.**
 
-Manual dump:
+Take one:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec -T postgres \
-  pg_dump -U lamplight_admin -Fc lamplight > lamplight-$(date +%F).dump
+DATABASE_ADMIN_URL=... scripts/backup.sh /srv/lamplight/backups
 ```
+
+It dumps in custom format, checks the result can be read back with
+`pg_restore --list` before calling it a backup, prints the size and object
+count, and prunes anything older than `BACKUP_RETAIN_DAYS` (14 by default).
+Pruning happens last, so a failed backup never deletes a good one.
+
+It uses `DATABASE_ADMIN_URL` deliberately. The application role cannot bypass
+row-level security, so a dump taken as that role would contain only the rows
+visible under whatever `app.tenant_id` was set, which is none of them. That
+backup would restore into an empty database and look like it worked.
 
 ### The restore drill, which is not optional
 
@@ -219,22 +242,33 @@ Dokploy only guarantees restores of backups its own system produced, and there
 is an open issue about large restores executing more than once. A backup you
 have never restored is a guess.
 
-Run this before go-live, and again after any change to the backup config:
-
-1. Provision a scratch VPS or a local stack.
-2. Restore the most recent production backup into it.
-3. Run the isolation suite against the restored data:
-   `pnpm test:isolation`. It asserts against known fixture shapes, so it also
-   catches a restore that silently truncated.
-4. Record how long the whole thing took. That number is your actual recovery
-   time, and it is the only honest input to what you promise an institute.
-
-Manual restore:
+The drill restores into a scratch database, so it is safe to run against
+production data on an ordinary Tuesday:
 
 ```bash
-docker compose -f docker-compose.prod.yml exec -T postgres \
-  pg_restore -U lamplight_admin -d lamplight --clean --if-exists < lamplight-2026-08-16.dump
+DATABASE_ADMIN_URL=... scripts/restore.sh /srv/lamplight/backups/lamplight-....dump
 ```
+
+It refuses to restore over the live database unless you add `--i-mean-it`,
+checks that `lamplight_app` and `lamplight_admin` exist first (a dump carries a
+database, not a cluster's roles, and without them every GRANT and every RLS
+policy in it fails), then prints row counts and, most importantly:
+
+```
+row-level security: 18 isolation policies, 18 tables forcing it
+```
+
+That last line is the one worth reading. A restore that brought the data and
+dropped the policies produces a database that looks complete and enforces
+nothing, and it exits non-zero rather than letting you believe it.
+
+Run it before go-live and after any change to the backup configuration. Record
+how long it took: that number is your actual recovery time, and it is the only
+honest input to what you promise an institute.
+
+To take over from a drill and go live on restored data, add `--i-mean-it`.
+Afterwards, run `pnpm test:isolation` against it: the suite asserts known
+fixture shapes and catches a restore that silently truncated.
 
 ---
 
@@ -305,13 +339,31 @@ secret too, so a 404 here means one of the two and the logs say which.
 
 ## 4c. The maintenance sweep
 
-One cron line, one secret, two jobs:
+It runs itself. `docker-compose.prod.yml` has a `sweep` service that calls the
+endpoint every `SWEEP_INTERVAL_SECONDS` (900 by default) from inside the
+compose network, so it is deployed and versioned with everything else instead
+of living in somebody's crontab.
+
+Nothing called this endpoint until that service existed. On a deployment
+without it, a custom domain sits unverified until an admin happens to open the
+settings page, and expired invitations are never deleted.
+
+Both the app and the sweep service need `DOMAIN_SWEEP_SECRET`, and it must be
+the same value. Watch it work:
 
 ```bash
-# Every ten minutes, on the VPS.
-*/10 * * * * curl -fsS -X POST \
+docker compose -f docker-compose.prod.yml logs -f sweep
+```
+
+The service refuses to start when the secret is unset, rather than looping
+against an endpoint that answers 404 and looking healthy while doing nothing.
+
+To run one by hand:
+
+```bash
+curl -fsS -X POST \
   -H "x-lamplight-sweep-secret: $DOMAIN_SWEEP_SECRET" \
-  https://<apex>/api/platform/sweep >/dev/null
+  https://<apex>/api/platform/sweep
 ```
 
 **Domains.** Polls Cloudflare for every unverified hostname and releases claims

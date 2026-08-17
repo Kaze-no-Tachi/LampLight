@@ -36,6 +36,20 @@ services:
       TENANT_SUBDOMAIN_ROOT: ${SELFHOST_DOMAIN}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       BETTER_AUTH_URL: https://${SELFHOST_DOMAIN}
+      SELF_SERVE_SIGNUP: ${SELF_SERVE_SIGNUP:-false}
+      # Required in production, self-host included: an instance that cannot
+      # send mail cannot let anybody finish creating an account. Set
+      # MAIL_TRANSPORT=console deliberately if you are only trying it out.
+      MAIL_TRANSPORT: ${MAIL_TRANSPORT:-auto}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      MAIL_FROM: ${MAIL_FROM}
+      # A single-tenant instance has no custom hostnames to verify, but
+      # invitations still expire and still need deleting.
+      DOMAIN_SWEEP_SECRET: ${DOMAIN_SWEEP_SECRET}
       # Local object storage. Point at R2 or any S3-compatible service instead
       # if you would rather not keep media on this box.
       S3_ENDPOINT: http://minio:9000
@@ -76,6 +90,19 @@ services:
       DATABASE_ADMIN_URL: postgres://lamplight_admin:${POSTGRES_ADMIN_PASSWORD}@postgres:5432/lamplight
     depends_on:
       postgres:
+        condition: service_healthy
+
+  sweep:
+    image: curlimages/curl:8.11.1
+    restart: unless-stopped
+    environment:
+      SWEEP_INTERVAL_SECONDS: ${SWEEP_INTERVAL_SECONDS:-3600}
+      DOMAIN_SWEEP_SECRET: ${DOMAIN_SWEEP_SECRET}
+    volumes:
+      - ./docker/sweep/run.sh:/run.sh:ro
+    entrypoint: ['sh', '/run.sh']
+    depends_on:
+      app:
         condition: service_healthy
 
   postgres:

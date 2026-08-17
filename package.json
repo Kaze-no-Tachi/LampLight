@@ -22,6 +22,7 @@
     "db:reset": "tsx src/db/reset.ts",
     "cf:setup": "tsx scripts/cf-setup.ts",
     "cf:probe": "tsx scripts/cf-probe.ts",
+    "env:check": "tsx scripts/check-env.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run tests/unit",
