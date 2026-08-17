@@ -86,9 +86,11 @@ waits for `migrate` to exit successfully. The box exposes nothing but SSH, and
   keeps layout/spacing/typography, rsuite takes interactive controls only),
   one screen per commit. Phase 1 (foundations: rsuite installed,
   `RsuiteProvider`, the `--rs-*` theming bridge in
-  `src/lib/theme/theme.ts`'s `resolveRsuiteTokens`) is done. Next: the two
-  native dialogs (`AddLessonDialog`'s `<dialog>`, the two `window.confirm`
-  archive buttons) move to rsuite's `Modal`.
+  `src/lib/theme/theme.ts`'s `resolveRsuiteTokens`) and phase 2 (the two
+  native dialogs, now rsuite `Modal`, via a new shared `ConfirmModal` for
+  the two archive confirmations) are both done. Next: phase 3, forms and
+  controls on `/teach` (publish `Toggle`, instructor `SelectPicker`, the
+  course/program forms).
 - Roll the Cloudflare API token and the Brevo API key, both exposed in an
   earlier session transcript.
 - R2 bucket wants recreating in ENAM: it was made in APAC and location is fixed

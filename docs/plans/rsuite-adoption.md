@@ -10,7 +10,16 @@
       rendered on `/account` came back as Grace's and Cornerstone's actual
       brand colors, not rsuite's stock blue, then the button was removed.
       Commit `fe6c1e6`.
-- [ ] **Phase 2, the two native dialogs**, next.
+- [x] **Phase 2, the two native dialogs.** `AddLessonDialog`'s `<dialog>`
+      and the two `window.confirm` archive prompts (course, lesson) now use
+      rsuite's `Modal`, the latter two through a new shared `ConfirmModal`.
+      Two real e2e failures surfaced by actually running the affected
+      specs, both the same cause: rsuite's Modal stays mounted through its
+      own exit animation, so a click right after closing one could land on
+      its leftover submit button or fading backdrop instead of what was
+      meant. Fixed by waiting for the modal to report hidden before the
+      next interaction. Commit `6fe4331`.
+- [ ] **Phase 3, forms and controls on `/teach`**, next.
 
 **Decisions taken:**
 
