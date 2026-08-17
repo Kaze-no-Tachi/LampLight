@@ -19,6 +19,21 @@
       its leftover submit button or fading backdrop instead of what was
       meant. Fixed by waiting for the modal to report hidden before the
       next interaction. Commit `6fe4331`.
+- [x] **Bug found while building the platform apex home page (unplanned,
+      outside the phase list): rsuite's own CSS was never actually loading.**
+      Every rsuite component in the app so far imports from the bare
+      `'rsuite'` package, which has no side-effect stylesheet; only the
+      phase-1 verification button (since deleted) got styled, because it
+      explicitly imported `rsuite/Button/styles/index.css`. Every real
+      Button and Modal shipped in phases 1-2 had been rendering with no
+      rsuite CSS applied at all. Fixed with one import,
+      `rsuite/dist/rsuite-no-reset.css` in `src/app/globals.css` (no-reset
+      because Tailwind's own preflight already resets the page). Verified
+      in a real browser: the course editor's "Add lesson" button now
+      renders the signed-in institute's actual brand color. Commit
+      `844ce20`, alongside a real `/platform-home` (the platform apex's own
+      page, not one of the phases below since it is not a tenant screen,
+      but it uses rsuite `Panel`/`Divider` and is what surfaced the bug).
 - [ ] **Phase 3, forms and controls on `/teach`**, next.
 
 **Decisions taken:**
