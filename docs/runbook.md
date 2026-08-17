@@ -311,6 +311,29 @@ containers are recreated from the old image with no error anywhere. Pulling
 first also means the migrator that runs is the one belonging to the release
 about to start, rather than the one from last time.
 
+**In Dokploy, `--pull always` belongs in Run Command**, which is the cleaner
+half of the same fix. Under the service's Advanced settings, override the
+default with:
+
+```
+docker compose -p <dokploy-project-name> -f ./docker-compose.prod.yml \
+  up -d --pull always --remove-orphans --wait
+```
+
+`--wait` blocks until healthchecks pass, so a broken release fails the deploy
+instead of reporting success over a down site. `--build` is dropped from
+Dokploy's default because this compose file builds nothing: images come from
+CI, which is what keeps a small box viable.
+
+**Never change the `-p` project name.** It is how Docker finds the existing
+containers and the Postgres volume. A different one silently starts a second
+stack with an empty database beside the real one.
+
+The same applies to the pre-deploy command, which needs the project name for a
+sharper reason: `migrate` declares `depends_on: postgres`, so under a different
+project name compose starts its own Postgres, migrates that, and leaves the
+real database untouched while reporting success.
+
 Once first light is behind you, prefer pinning `LAMPLIGHT_IMAGE` and
 `LAMPLIGHT_MIGRATOR_IMAGE` to a commit sha instead. A tag that never moves
 cannot be stale, the deployed version is legible from the environment, and
