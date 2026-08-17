@@ -2,8 +2,15 @@
 
 ## Status
 
-Decided with the user; nothing in `package.json` or `src/` has been touched
-for this yet. Next: phase 1 (foundations) below, as its own gated commit.
+- [x] **Phase 1, foundations.** rsuite installed, `RsuiteProvider` wired into
+      the tenant layout, `resolveRsuiteTokens` derives rsuite's `--rs-*`
+      scale from the same resolved `TokenMap` this app's own tokens come
+      from, marked `!important` so it wins regardless of stylesheet load
+      order. Verified in a real production build: a temporary rsuite Button
+      rendered on `/account` came back as Grace's and Cornerstone's actual
+      brand colors, not rsuite's stock blue, then the button was removed.
+      Commit `fe6c1e6`.
+- [ ] **Phase 2, the two native dialogs**, next.
 
 **Decisions taken:**
 

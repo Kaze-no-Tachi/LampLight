@@ -81,16 +81,14 @@ waits for `migrate` to exit successfully. The box exposes nothing but SSH, and
   deliberately silent about sections for the common one-section course, so
   the control needs progressive disclosure, not a form that is just always
   there.
-- UI library decision, next up: the user wants screens rebuilt on React Suite
-  (rsuite), modals included. Nothing uses it yet; every screen so far is
-  plain Tailwind plus native elements (`<dialog>` for `AddLessonDialog`,
-  `window.confirm` for the two archive buttons). This is a cross-cutting
-  adoption across the whole app, not scoped to any one round-2 chunk, so per
-  the user's own instruction it gets a written plan first, checked with them
-  before any rsuite code lands: which components rsuite replaces first,
-  whether Tailwind and rsuite's own styling coexist or one wins, and whether
-  native `<dialog>`/`confirm` get swapped for rsuite's `Modal` as part of the
-  same pass.
+- rsuite adoption is under way, plan and progress in
+  `docs/plans/rsuite-adoption.md`. Decided: coexists with Tailwind (Tailwind
+  keeps layout/spacing/typography, rsuite takes interactive controls only),
+  one screen per commit. Phase 1 (foundations: rsuite installed,
+  `RsuiteProvider`, the `--rs-*` theming bridge in
+  `src/lib/theme/theme.ts`'s `resolveRsuiteTokens`) is done. Next: the two
+  native dialogs (`AddLessonDialog`'s `<dialog>`, the two `window.confirm`
+  archive buttons) move to rsuite's `Modal`.
 - Roll the Cloudflare API token and the Brevo API key, both exposed in an
   earlier session transcript.
 - R2 bucket wants recreating in ENAM: it was made in APAC and location is fixed
