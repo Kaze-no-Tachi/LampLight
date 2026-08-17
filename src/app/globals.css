@@ -1,4 +1,11 @@
 @import 'tailwindcss';
+/*
+ * rsuite's component styles (round 2, rsuite adoption), without rsuite's own
+ * element reset: Tailwind's preflight already resets the page, and loading
+ * both resets risks fighting each other across the whole app rather than
+ * just the components that adopted rsuite.
+ */
+@import 'rsuite/dist/rsuite-no-reset.css';
 
 /*
  * Design tokens live as CSS custom properties so that per-tenant theming
