@@ -14,15 +14,47 @@ the day Dokploy is what broke.
 
 ### 1.1 The box
 
-Any VPS with 4 GB of RAM and Docker will do. Hostinger ships a Dokploy
-template, which saves the install step.
+4 GB of RAM is the floor and 8 GB is the comfortable choice, because Dokploy is
+not only a control panel: it runs its own Postgres, Redis, and Traefik
+alongside the stack, which is roughly 1 to 1.5 GB before any Lamplight
+container starts. Two cores rather than one, so a backup or a migration is not
+competing with request rendering for the only one.
+
+Hostinger ships a Dokploy template, which saves the install step.
 
 ```bash
 # If not using a template:
 curl -sSL https://dokploy.com/install.sh | sh
 ```
 
-Lock it down before anything else goes on it:
+**Nothing but SSH may be reachable from the internet.** Cloudflare reaches the
+application through an outbound tunnel, so the origin needs no inbound surface
+at all. If you find yourself opening 80 or 443, something is wrong with the
+tunnel and the fix is the tunnel, not the firewall.
+
+That is load bearing beyond the obvious. Sign-in rate limiting keys on the
+client address, which the application reads from the `CF-Connecting-IP` header,
+because behind the tunnel every request otherwise appears to come from the
+connector and one bucket would cover the whole platform. Cloudflare overwrites
+that header on the way through, so the value can be trusted exactly as long as
+nothing can reach the application without passing Cloudflare. Expose the origin
+directly and that header becomes attacker controlled, which makes the sign-in
+rate limit bypassable by setting it.
+
+#### ufw alone does not do this, and it will tell you it did
+
+Dokploy publishes ports: Traefik on 80 and 443, its own dashboard on 3000.
+Lamplight's own stack publishes nothing (see the header of
+`docker-compose.prod.yml`), so every publicly bound port on this box belongs to
+Dokploy.
+
+A published container port bypasses ufw. Docker DNATs the traffic in the `nat`
+table and it is then evaluated in `FORWARD`, while ufw's rules govern `INPUT`.
+So `ufw status` will report 443 as denied while 443 is answering the internet.
+This is the default behaviour of Docker and ufw together, not a
+misconfiguration you can spot by reading either one.
+
+Set up the host firewall anyway, for anything running outside Docker:
 
 ```bash
 ufw default deny incoming
@@ -30,27 +62,82 @@ ufw allow 22/tcp
 ufw enable
 ```
 
-**Port 80 and 443 stay closed.** Cloudflare reaches the application through an
-outbound tunnel. If you find yourself opening them, something is wrong with the
-tunnel and the fix is the tunnel, not the firewall.
+Then close the container ports in `DOCKER-USER`, which is the one chain Docker
+leaves to you and traverses first:
 
-Verify with `ss -tlnp`. SSH and Docker's internal listeners only.
+```bash
+IFACE=$(ip route get 1.1.1.1 | grep -oP 'dev \K\S+')    # usually eth0
 
-Those closed ports are load bearing beyond the obvious. Rate limiting on
-sign-in keys on the client address, which the application reads from the
-`CF-Connecting-IP` header, because behind the tunnel every request otherwise
-appears to come from the connector and one bucket would cover the whole
-platform. Cloudflare overwrites that header on the way through, so the value
-can be trusted exactly as long as nothing can reach the application without
-passing Cloudflare. Open 443 to the world and that header becomes attacker
-controlled and rate limiting becomes bypassable by setting it.
+# Order matters. Return traffic for connections a container opened outward has
+# to survive, or the app cannot reach Cloudflare, Stripe, R2, or SMTP.
+iptables -I DOCKER-USER 1 -i "$IFACE" -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+iptables -I DOCKER-USER 2 -i "$IFACE" -j DROP
+
+# Same again for v6 if the VPS has an address on it.
+ip6tables -I DOCKER-USER 1 -i "$IFACE" -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+ip6tables -I DOCKER-USER 2 -i "$IFACE" -j DROP
+```
+
+**These do not survive a reboot on their own.** Persist them, or the box
+quietly reopens the first time it restarts, which is the worst possible time to
+find out:
+
+```bash
+apt-get install -y iptables-persistent      # prompts to save the current rules
+netfilter-persistent save                   # after any later change
+```
+
+One consequence worth knowing: with 80 and 443 shut, Dokploy cannot issue its
+own Let's Encrypt certificates. That is fine here. Every certificate this
+platform serves comes from Cloudflare, both for `lamplight.school` and for
+institutes' custom domains (section 4b).
+
+#### Verifying it, properly
+
+Neither of the obvious checks is proof:
+
+- `ufw status` is answering about a chain this traffic never reaches.
+- `ss -tlnp` reports that a listener exists, which stays true after the
+  `DOCKER-USER` rules take effect. It tells you what is bound, not what is
+  reachable.
+
+The only real check is from somewhere else. From your own machine, not the VPS:
+
+```bash
+for port in 80 443 3000; do
+  nc -z -w 5 <vps-ip> "$port" && echo "REACHABLE: $port" || echo "closed: $port"
+done
+```
+
+All three must read `closed`. Port 22 should be reachable, which also confirms
+the probe itself works and you are not reading a network that drops everything.
+
+Re-run it after upgrading Dokploy and after any reboot. An upgrade recreates
+Traefik and the dashboard service, and a reboot starts with an empty ruleset
+unless the rules were persisted, so both are ways this box can quietly reopen
+without anybody having touched the firewall.
 
 ### 1.2 The Dokploy dashboard
 
 Dokploy runs as root with the Docker socket, on a box holding student records
 for several institutions. Do not expose its dashboard on a public hostname.
-Route it through the same tunnel, behind Cloudflare Access with your own email
-as the only allowed identity.
+Route it through the tunnel, behind Cloudflare Access with your own email as
+the only allowed identity.
+
+**Sequencing trap.** Dokploy's first-run screen creates the admin account, and
+whoever reaches it first gets it. Closing port 3000 before you have created
+that account locks you out of the setup; leaving it open until the tunnel is
+ready leaves an unclaimed root-equivalent dashboard on a public IP, however
+briefly. Do neither. Close the ports first as above, then reach the dashboard
+over SSH from your own machine:
+
+```bash
+ssh -L 3000:localhost:3000 root@<vps-ip>
+# then open http://localhost:3000 in your browser and create the account
+```
+
+Set up Cloudflare Access on the dashboard's hostname before you route it
+through the tunnel, not after.
 
 ### 1.3 The tunnel
 
@@ -125,6 +212,14 @@ variable is wrong. The alternative is finding out from a container that will
 not stay up while you are mid-deploy. It also flags values that look like they
 were copied from a development environment, and warns when
 `DOMAIN_SWEEP_SECRET` is unset.
+
+**`INSECURE_HTTP` must never appear in this file.** It drops the Secure
+attribute from the session cookie, so the cookie travels in the clear and
+anyone able to observe the connection can take a session. It exists for one
+situation, a browser speaking plain http to a production build, which is how
+the browser suite runs and how a developer might poke at `pnpm start` locally.
+`pnpm env:check` warns when it is set, and the application logs a warning on
+every boot in production. Neither is a substitute for it not being there.
 
 ---
 
@@ -306,14 +401,6 @@ invitation has also expired, an institute admin has to invite them again.
 matters. `SELF_SERVE_SIGNUP` is a kill switch above it: setting it false stops
 every institute at once without touching anybody's settings, and restoring it
 restores each institute's own choice. See docs/adr/0006.
-
-**`INSECURE_HTTP` must never be set on a real deployment.** It drops the
-Secure attribute from the session cookie, so the cookie travels in the clear
-and anyone who can observe the connection can take a session. It exists for one
-situation: a browser speaking plain http to a production build, which is how
-the browser suite runs and how a developer might poke at `pnpm start` locally.
-`pnpm env:check` warns when it is set, and the application logs a warning on
-every boot in production.
 
 ---
 
