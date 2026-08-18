@@ -71,6 +71,13 @@
       "when": 1786975757334,
       "tag": "0009_lesson_and_course_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787017706284,
+      "tag": "0010_course_tags",
+      "breakpoints": true
     }
   ]
 }

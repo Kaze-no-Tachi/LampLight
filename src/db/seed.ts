@@ -10,6 +10,7 @@ import {
   SEED_TENANTS,
   SHARED_STUDENT,
   seedUuid,
+  tagBySlug,
   userByKey,
   type SeedTenant,
   type SeedUser,
@@ -20,6 +21,8 @@ import {
   auditLog,
   courseInstructors,
   courseResources,
+  courseTagLinks,
+  courseTags,
   courses,
   enrollments,
   lessonResources,
@@ -294,6 +297,28 @@ async function seedTenant(tenant: SeedTenant): Promise<void> {
       descriptionMd: `## ${course.title}\n\nAudio lectures with notes.`,
       isStandalonePurchasable: course.isStandalonePurchasable,
     })),
+  );
+
+  // The institute's tag vocabulary, then the courses that carry each tag.
+  // Both fixtures use identical slugs, so a tag query that loses its tenant
+  // filter returns a plausible row rather than an obviously foreign one.
+  await db.insert(courseTags).values(
+    tenant.tags.map((tag) => ({
+      id: tag.id,
+      tenantId,
+      label: tag.label,
+      slug: tag.slug,
+    })),
+  );
+
+  await db.insert(courseTagLinks).values(
+    tenant.courses.flatMap((course) =>
+      course.tagSlugs.map((slug) => ({
+        tenantId,
+        courseId: course.id,
+        tagId: tagBySlug(tenant, slug).id,
+      })),
+    ),
   );
 
   // A syllabus per course, marked public, since it is what somebody reads

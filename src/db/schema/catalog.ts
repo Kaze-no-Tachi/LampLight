@@ -193,3 +193,80 @@ export const courseInstructors = pgTable(
     }).onDelete('cascade'),
   ],
 );
+
+/**
+ * The institute's own subject vocabulary.
+ *
+ * A table rather than a text[] on courses, for two reasons that only show up
+ * later. A tenant-owned vocabulary can be renamed once ("OT Survey" becomes
+ * "Old Testament") instead of being edited on every course that carries it,
+ * and the catalog's filter chips need a stable identity to filter by that
+ * survives that rename. An array column gives neither, and de-duplicating free
+ * text across a catalog is the thing every institute would end up doing by
+ * hand.
+ *
+ * Scoped like everything else: the composite unique on (tenant_id, id) is what
+ * lets the link table below carry a tenant-qualified foreign key, so a course
+ * in one institute cannot reference a tag in another even if a bug supplies
+ * the wrong id.
+ */
+export const courseTags = pgTable(
+  'course_tags',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    // Used in catalog filter URLs, so it has to stay stable and unique within
+    // the institute while the label is free to change.
+    slug: text('slug').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique('course_tags_tenant_id_id_key').on(table.tenantId, table.id),
+    unique('course_tags_tenant_id_slug_key').on(table.tenantId, table.slug),
+  ],
+);
+
+/**
+ * Which tags a course carries.
+ *
+ * Both foreign keys are tenant-qualified and cascade, so deleting a tag
+ * removes it from every course rather than leaving a dangling link, and
+ * deleting a course takes its links with it.
+ */
+export const courseTagLinks = pgTable(
+  'course_tag_links',
+  {
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    courseId: uuid('course_id').notNull(),
+    tagId: uuid('tag_id').notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'course_tag_links_pkey',
+      columns: [table.tenantId, table.courseId, table.tagId],
+    }),
+    // The catalog filters by tag and then lists courses, so the lookup that
+    // needs an index is tag -> courses rather than the primary key's order.
+    index('course_tag_links_tenant_id_tag_id_idx').on(
+      table.tenantId,
+      table.tagId,
+    ),
+    foreignKey({
+      name: 'course_tag_links_tenant_id_course_id_fk',
+      columns: [table.tenantId, table.courseId],
+      foreignColumns: [courses.tenantId, courses.id],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'course_tag_links_tenant_id_tag_id_fk',
+      columns: [table.tenantId, table.tagId],
+      foreignColumns: [courseTags.tenantId, courseTags.id],
+    }).onDelete('cascade'),
+  ],
+);

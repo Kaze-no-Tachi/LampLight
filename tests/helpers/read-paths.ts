@@ -1,8 +1,13 @@
 import {
   findCourseBySlug,
+  listCourseInstructors,
   listCourseResources,
+  listCourseStats,
+  listCourseTags,
+  listProgramsForCourse,
   listPublishedCourses,
   listPublishedPrograms,
+  listTagsForCourses,
 } from '@/db/repositories/catalog';
 import {
   countCourseEnrollments,
@@ -104,6 +109,76 @@ function lessonIds(tenant: SeedTenant): Set<string> {
 }
 
 export const READ_PATHS: ReadPath[] = [
+  {
+    name: 'catalog.listCourseTags',
+    async run(scope, subject) {
+      // Keyed on the tenant alone. Both fixtures carry the same tag slugs, so
+      // a lost filter returns a vocabulary that looks correct and is not.
+      const rows = await listCourseTags(scope);
+      const subjectIds = new Set(subject.tags.map((tag) => tag.id));
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        subjectIds,
+      );
+    },
+  },
+  {
+    name: 'catalog.listTagsForCourses',
+    async run(scope, subject) {
+      // Named by another institute's course ids, which is how the catalogue
+      // would leak: the tag rows come back joined to courses the caller does
+      // not own.
+      const courseIds = subject.courses.map((course) => course.id);
+      const rows = await listTagsForCourses(scope, courseIds);
+      const subjectIds = new Set(subject.tags.map((tag) => tag.id));
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        subjectIds,
+      );
+    },
+  },
+  {
+    name: 'catalog.listCourseStats',
+    async run(scope, subject) {
+      // The aggregate is keyed on course, so a lost filter reports one
+      // institute's lesson counts under another's catalogue.
+      const courseIds = subject.courses.map((course) => course.id);
+      const rows = await listCourseStats(scope, courseIds);
+      const subjectIds = new Set(courseIds);
+      return ownedBySubject(
+        rows.map((row) => row.courseId),
+        subjectIds,
+      );
+    },
+  },
+  {
+    name: 'catalog.listCourseInstructors',
+    async run(scope, subject) {
+      // A lost filter would put one institute's staff on another's public
+      // course page.
+      const course = courseBySlug(subject, 'old-testament-survey');
+      const rows = await listCourseInstructors(scope, course.id);
+      const subjectIds = new Set(
+        Object.values(subject.users).map((user) => user.id),
+      );
+      return ownedBySubject(
+        rows.map((row) => row.userId),
+        subjectIds,
+      );
+    },
+  },
+  {
+    name: 'catalog.listProgramsForCourse',
+    async run(scope, subject) {
+      const course = courseBySlug(subject, 'old-testament-survey');
+      const rows = await listProgramsForCourse(scope, course.id);
+      const subjectIds = new Set(subject.programs.map((p) => p.id));
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        subjectIds,
+      );
+    },
+  },
   {
     name: 'catalog.listCourseResources',
     async run(scope, subject) {
