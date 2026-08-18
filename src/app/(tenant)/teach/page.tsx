@@ -3,11 +3,11 @@ import { notFound } from 'next/navigation';
 import { getTenantDb } from '@/db/client';
 import {
   countCourseEnrollments,
-  listAssignableStaff,
   listCourseShapes,
   listCoursesForAdmin,
   listProgramsForAdmin,
 } from '@/db/repositories/catalog-admin';
+import { listTagsForCourses } from '@/db/repositories/catalog';
 import { courseInstructors, courses } from '@/db/schema';
 import { can } from '@/lib/access/can';
 import { requireViewer } from '@/lib/auth/guards';
@@ -51,6 +51,22 @@ function shapeOf(
   return row ?? { moduleCount: 0, lessonCount: 0, awaitingAudio: 0 };
 }
 
+/**
+ * Tags keyed by the course they hang off, so the list can be rendered without
+ * a query per row.
+ */
+function tagsByCourse(
+  links: { courseId: string; label: string }[],
+): Map<string, string[]> {
+  const byCourse = new Map<string, string[]>();
+  for (const link of links) {
+    const held = byCourse.get(link.courseId) ?? [];
+    held.push(link.label);
+    byCourse.set(link.courseId, held);
+  }
+  return byCourse;
+}
+
 export default async function TeachPage() {
   const viewer = await requireViewer();
   const isAdmin = viewer.role === 'admin';
@@ -67,20 +83,19 @@ export default async function TeachPage() {
   const { courses: view, programs } = await getTenantDb(viewer.tenant.id).run(
     async (scope) => {
       if (isAdmin) {
-        const [adminCourses, staff, adminPrograms] = await Promise.all([
+        const [adminCourses, adminPrograms] = await Promise.all([
           listCoursesForAdmin(scope),
-          listAssignableStaff(scope),
           listProgramsForAdmin(scope),
         ]);
 
+        const ids = adminCourses.map((course) => course.id);
         const shapes = new Map(
-          (
-            await listCourseShapes(
-              scope,
-              adminCourses.map((course) => course.id),
-            )
-          ).map((row) => [row.courseId, row]),
+          (await listCourseShapes(scope, ids)).map((row) => [
+            row.courseId,
+            row,
+          ]),
         );
+        const tags = tagsByCourse(await listTagsForCourses(scope, ids));
 
         const courseRows = await Promise.all(
           adminCourses.map(async (course) => ({
@@ -88,15 +103,8 @@ export default async function TeachPage() {
             title: course.title,
             enrolledCount: await countCourseEnrollments(scope, course.id),
             shape: shapeOf(shapes.get(course.id)),
-            admin: {
-              isPublished: course.isPublished,
-              lessonCount: course.lessonCount,
-              instructors: course.instructors,
-              unassignedStaff: staff.filter(
-                (person) =>
-                  !course.instructors.some((i) => i.userId === person.userId),
-              ),
-            },
+            tags: tags.get(course.id) ?? [],
+            isPublished: course.isPublished,
           })),
         );
 
@@ -127,14 +135,14 @@ export default async function TeachPage() {
         // says "the first course" quietly nondeterministic.
         .orderBy(courses.title);
 
+      const mineIds = mine.map((course) => course.id);
       const mineShapes = new Map(
-        (
-          await listCourseShapes(
-            scope,
-            mine.map((course) => course.id),
-          )
-        ).map((row) => [row.courseId, row]),
+        (await listCourseShapes(scope, mineIds)).map((row) => [
+          row.courseId,
+          row,
+        ]),
       );
+      const mineTags = tagsByCourse(await listTagsForCourses(scope, mineIds));
 
       const courseRows = await Promise.all(
         mine.map(async (course) => ({
@@ -142,6 +150,7 @@ export default async function TeachPage() {
           title: course.title,
           enrolledCount: await countCourseEnrollments(scope, course.id),
           shape: shapeOf(mineShapes.get(course.id)),
+          tags: mineTags.get(course.id) ?? [],
         })),
       );
 

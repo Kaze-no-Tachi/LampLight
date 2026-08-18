@@ -46,13 +46,18 @@ export function TeachList({
     const needle = query.trim().toLowerCase();
 
     return courses.filter((course) => {
-      if (filter === 'published' && !course.admin?.isPublished) return false;
-      if (filter === 'draft' && course.admin?.isPublished !== false) {
-        return false;
-      }
+      if (filter === 'published' && !course.isPublished) return false;
+      if (filter === 'draft' && course.isPublished !== false) return false;
       if (filter === 'audio' && course.shape.awaitingAudio === 0) return false;
       if (!needle) return true;
-      return course.title.toLowerCase().includes(needle);
+
+      // Tags as well as titles, which is what the design says search covers
+      // here and on the catalogue: typing a subject should find the courses
+      // filed under it even when the word is absent from the title.
+      return (
+        course.title.toLowerCase().includes(needle) ||
+        course.tags.some((tag) => tag.toLowerCase().includes(needle))
+      );
     });
   }, [courses, query, filter]);
 
@@ -73,8 +78,8 @@ export function TeachList({
           <Input
             value={query}
             onChange={(value: string) => setQuery(value)}
-            placeholder="Search courses"
-            aria-label="Search courses"
+            placeholder="Search courses and tags"
+            aria-label="Search courses and tags"
           />
         </div>
 
