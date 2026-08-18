@@ -153,7 +153,10 @@ export default async function LessonPage({
             </span>
             <ul className="flex flex-col gap-1.5">
               {documents.map((item) => (
-                <li key={item.resourceId} className="text-(length:--text-label)">
+                <li
+                  key={item.resourceId}
+                  className="text-(length:--text-label)"
+                >
                   <a
                     href={item.url}
                     target="_blank"

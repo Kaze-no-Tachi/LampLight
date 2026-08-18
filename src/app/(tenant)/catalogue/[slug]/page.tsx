@@ -323,4 +323,3 @@ function accessNoteFor({
     note: 'One enrolment, kept for good.',
   };
 }
-

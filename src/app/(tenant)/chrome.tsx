@@ -66,7 +66,13 @@ function Wordmark({ branding }: { branding: Branding }) {
  * One nav link. Sized from the interface scale so the row stays on a single
  * baseline whatever the institute's radius or brand does.
  */
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+function NavLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: React.ReactNode;
+}) {
   return (
     <Link
       href={href}

@@ -243,9 +243,7 @@ export type CourseTag = {
  * Ordered by label rather than by creation, because this is read as a list of
  * subjects rather than as a history of what an admin typed.
  */
-export async function listCourseTags(
-  scope: TenantScope,
-): Promise<CourseTag[]> {
+export async function listCourseTags(scope: TenantScope): Promise<CourseTag[]> {
   return scope.tx
     .select({
       id: courseTags.id,

@@ -53,7 +53,11 @@ function stateFor(
   enrolledIds: Set<string>,
 ): Pick<CatalogueRow, 'stateLabel' | 'stateColor' | 'priceLabel'> {
   if (enrolledIds.has(course.id)) {
-    return { stateLabel: 'Enrolled', stateColor: 'green', priceLabel: 'Included' };
+    return {
+      stateLabel: 'Enrolled',
+      stateColor: 'green',
+      priceLabel: 'Included',
+    };
   }
   if (course.priceCents === 0) {
     return { stateLabel: 'Free', stateColor: 'green', priceLabel: 'Free' };
@@ -94,7 +98,9 @@ export default async function CataloguePage() {
   // Entitlement rows name the program they came through by title rather than
   // by id, so that is what a program row can be matched against here.
   const enrolledProgramTitles = new Set(
-    enrolled.filter((row) => row.via === 'program').map((row) => row.sourceTitle),
+    enrolled
+      .filter((row) => row.via === 'program')
+      .map((row) => row.sourceTitle),
   );
 
   const tagsByCourse = new Map<string, typeof courseTags>();
@@ -197,7 +203,9 @@ export default async function CataloguePage() {
 
       <section className="flex flex-col gap-[18px]">
         <div className="border-border flex flex-wrap items-baseline justify-between gap-4 border-b pb-3">
-          <h2 className="text-(length:--text-section) leading-tight">Courses</h2>
+          <h2 className="text-(length:--text-section) leading-tight">
+            Courses
+          </h2>
           <span className="text-muted-foreground text-(length:--text-label)">
             Every course opens with a lesson you can hear without an account.
           </span>

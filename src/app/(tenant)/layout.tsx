@@ -84,9 +84,7 @@ export default async function TenantLayout({
       <RsuiteProvider>
         <PlayerProvider>
           <div className="flex min-h-screen flex-col pb-24">
-            {staff ? null : (
-              <SiteHeader branding={branding} viewer={viewer} />
-            )}
+            {staff ? null : <SiteHeader branding={branding} viewer={viewer} />}
             <div className="flex-1">{children}</div>
             {staff ? null : <SiteFooter branding={branding} />}
           </div>
