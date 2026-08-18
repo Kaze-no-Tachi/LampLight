@@ -88,9 +88,21 @@ waits for `migrate` to exit successfully. The box exposes nothing but SSH, and
   `RsuiteProvider`, the `--rs-*` theming bridge in
   `src/lib/theme/theme.ts`'s `resolveRsuiteTokens`) and phase 2 (the two
   native dialogs, now rsuite `Modal`, via a new shared `ConfirmModal` for
-  the two archive confirmations) are both done. Next: phase 3, forms and
-  controls on `/teach` (publish `Toggle`, instructor `SelectPicker`, the
-  course/program forms).
+  the two archive confirmations) are both done. rsuite's own CSS was
+  actually never loading anywhere in the app until it was fixed alongside
+  a real `/platform-home` page (`src/app/globals.css` now imports
+  `rsuite/dist/rsuite-no-reset.css`); check any earlier screenshot or
+  visual impression of a rsuite Button/Modal predating that fix against a
+  fresh one before trusting it. Next: phase 3, forms and controls on
+  `/teach` (publish `Toggle`, instructor `SelectPicker`, the course/program
+  forms).
+- `/platform-home` (the apex domain, lamplight.school itself) is a basic
+  real page now, not the placeholder stub it was: a hero, a short
+  description, three rsuite `Panel` feature blurbs, no call to action
+  (there is no contact address or request-access flow anywhere in the
+  codebase to point one at). The user is about to do a full visual reskin
+  of the whole app in Claude Design in a separate session, so this was kept
+  deliberately basic rather than polished twice.
 - Roll the Cloudflare API token and the Brevo API key, both exposed in an
   earlier session transcript.
 - R2 bucket wants recreating in ENAM: it was made in APAC and location is fixed
