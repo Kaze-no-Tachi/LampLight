@@ -427,6 +427,88 @@ export async function setCourseTags(
 }
 
 /**
+ * Which section the new lesson goes into: the one that was named, a new one,
+ * or the course's first.
+ *
+ * Every branch filters on both the tenant and the course, so a section id
+ * belonging to another course resolves to nothing rather than to somebody
+ * else's syllabus.
+ */
+export async function resolveModule(
+  scope: TenantScope,
+  courseId: string,
+  asked: { askedModuleId: string; newModule: string },
+): Promise<string | null> {
+  if (asked.newModule) {
+    const next = await scope.tx
+      .select({
+        next: sql<number>`coalesce(max(${modules.sortOrder}), -1) + 1`,
+      })
+      .from(modules)
+      .where(
+        and(
+          eq(modules.tenantId, scope.tenantId),
+          eq(modules.courseId, courseId),
+        ),
+      );
+
+    const [made] = await scope.tx
+      .insert(modules)
+      .values({
+        tenantId: scope.tenantId,
+        courseId,
+        title: asked.newModule,
+        sortOrder: next[0]?.next ?? 0,
+      })
+      .returning({ id: modules.id });
+
+    return made?.id ?? null;
+  }
+
+  if (asked.askedModuleId) {
+    const [named] = await scope.tx
+      .select({ id: modules.id })
+      .from(modules)
+      .where(
+        and(
+          eq(modules.tenantId, scope.tenantId),
+          eq(modules.courseId, courseId),
+          eq(modules.id, asked.askedModuleId),
+        ),
+      )
+      .limit(1);
+
+    // A section that is not this course's is not a fallback case: somebody
+    // sent an id the screen never offered, and quietly filing the lesson
+    // somewhere else is worse than refusing.
+    return named?.id ?? null;
+  }
+
+  const [first] = await scope.tx
+    .select({ id: modules.id })
+    .from(modules)
+    .where(
+      and(eq(modules.tenantId, scope.tenantId), eq(modules.courseId, courseId)),
+    )
+    .orderBy(modules.sortOrder)
+    .limit(1);
+
+  if (first) return first.id;
+
+  const [made] = await scope.tx
+    .insert(modules)
+    .values({
+      tenantId: scope.tenantId,
+      courseId,
+      title: 'Lessons',
+      sortOrder: 0,
+    })
+    .returning({ id: modules.id });
+
+  return made?.id ?? null;
+}
+
+/**
  * Publishes or withdraws a program.
  *
  * The same shape as a course, and it existed as an omission rather than a

@@ -10,7 +10,6 @@ import { decideCourseAuthoring } from '@/lib/access/authoring';
 import { requireViewer } from '@/lib/auth/guards';
 import type { StaffModule } from '../../../lesson-list';
 import { LessonList } from '../../../lesson-list';
-import { AddLessonDialog } from './add-lesson-dialog';
 import { ArchiveCourseButton } from './archive-course-button';
 import { CourseEditor } from './course-editor';
 
@@ -142,7 +141,12 @@ export default async function EditCoursePage({
       <section className="flex flex-col gap-3">
         <h2 className="text-lg font-medium">Lessons</h2>
 
-        <AddLessonDialog courseId={courseId} />
+        <Link
+          href={`/teach/courses/${courseId}/lessons/new`}
+          className="bg-primary text-primary-foreground w-fit rounded-(--radius) px-[17px] py-[11px] text-(length:--text-ui) font-medium"
+        >
+          Add a lesson
+        </Link>
 
         <LessonList
           mode="staff"
