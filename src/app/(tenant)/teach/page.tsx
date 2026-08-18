@@ -4,6 +4,7 @@ import { getTenantDb } from '@/db/client';
 import {
   countCourseEnrollments,
   listAssignableStaff,
+  listCourseShapes,
   listCoursesForAdmin,
   listProgramsForAdmin,
 } from '@/db/repositories/catalog-admin';
@@ -12,7 +13,7 @@ import { can } from '@/lib/access/can';
 import { requireViewer } from '@/lib/auth/guards';
 import { NewCourseForm } from './new-course-form';
 import { NewProgramForm, ProgramRow } from './programs';
-import { TeachCourse } from './teach-course';
+import { TeachList } from './teach-list';
 
 /**
  * What an instructor may edit (PRD requirement P0-10), and what an admin
@@ -36,6 +37,18 @@ import { TeachCourse } from './teach-course';
  */
 export const dynamic = 'force-dynamic';
 
+/**
+ * A course with no sections yet produces no row in the aggregate at all, since
+ * the query counts outward from modules. Zeroes rather than undefined, so the
+ * card can say "0 sections" instead of breaking on a course somebody created
+ * a minute ago.
+ */
+function shapeOf(
+  row: { moduleCount: number; lessonCount: number; awaitingAudio: number } | undefined,
+): { moduleCount: number; lessonCount: number; awaitingAudio: number } {
+  return row ?? { moduleCount: 0, lessonCount: 0, awaitingAudio: 0 };
+}
+
 export default async function TeachPage() {
   const viewer = await requireViewer();
   const isAdmin = viewer.role === 'admin';
@@ -58,11 +71,21 @@ export default async function TeachPage() {
           listProgramsForAdmin(scope),
         ]);
 
+        const shapes = new Map(
+          (
+            await listCourseShapes(
+              scope,
+              adminCourses.map((course) => course.id),
+            )
+          ).map((row) => [row.courseId, row]),
+        );
+
         const courseRows = await Promise.all(
           adminCourses.map(async (course) => ({
             id: course.id,
             title: course.title,
             enrolledCount: await countCourseEnrollments(scope, course.id),
+            shape: shapeOf(shapes.get(course.id)),
             admin: {
               isPublished: course.isPublished,
               lessonCount: course.lessonCount,
@@ -102,11 +125,21 @@ export default async function TeachPage() {
         // says "the first course" quietly nondeterministic.
         .orderBy(courses.title);
 
+      const mineShapes = new Map(
+        (
+          await listCourseShapes(
+            scope,
+            mine.map((course) => course.id),
+          )
+        ).map((row) => [row.courseId, row]),
+      );
+
       const courseRows = await Promise.all(
         mine.map(async (course) => ({
           id: course.id,
           title: course.title,
           enrolledCount: await countCourseEnrollments(scope, course.id),
+          shape: shapeOf(mineShapes.get(course.id)),
         })),
       );
 
@@ -115,44 +148,43 @@ export default async function TeachPage() {
   );
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 p-8">
-      <header className="flex flex-col gap-1">
-        <p className="text-muted-foreground text-sm tracking-wide uppercase">
-          {viewer.tenant.name}
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight">Teaching</h1>
-        <p className="text-muted-foreground">
+    <div className="flex max-w-[900px] flex-col gap-12">
+      <header className="flex flex-col gap-2">
+        <h1 className="text-(length:--text-page) leading-[1.15] tracking-[-0.01em]">
+          Teaching
+        </h1>
+        <p className="text-muted-foreground text-(length:--text-body) leading-[1.6]">
           {isAdmin
             ? 'Every course at this institute.'
             : 'The courses you are assigned to.'}
         </p>
       </header>
 
-      {isAdmin && (
-        <section className="flex flex-col gap-4">
-          <h2 className="text-lg font-medium">Courses</h2>
-          <NewCourseForm />
-        </section>
-      )}
-
-      {view.length === 0 ? (
-        <p className="text-muted-foreground">
-          {isAdmin
-            ? 'Nothing yet. Create a course above.'
-            : 'You are not assigned to any courses yet. An admin can assign you.'}
-        </p>
-      ) : (
-        <div className="flex flex-col gap-6">
-          {view.map((course) => (
-            <TeachCourse key={course.id} course={course} />
-          ))}
+      <section className="flex flex-col gap-[18px]">
+        <div className="border-border flex flex-wrap items-baseline justify-between gap-4 border-b pb-3">
+          <h2 className="text-(length:--text-section) leading-tight">Courses</h2>
+          {isAdmin && <NewCourseForm />}
         </div>
-      )}
+
+        {view.length === 0 ? (
+          <p className="text-muted-foreground text-(length:--text-ui)">
+            {isAdmin
+              ? 'Nothing yet. Create the first course above.'
+              : 'You are not assigned to any courses yet. An admin can assign you.'}
+          </p>
+        ) : (
+          <TeachList courses={view} isAdmin={isAdmin} />
+        )}
+      </section>
 
       {programs && (
-        <section className="flex flex-col gap-4">
-          <h2 className="text-lg font-medium">Programs</h2>
-          <NewProgramForm />
+        <section className="flex flex-col gap-[18px]">
+          <div className="border-border flex flex-wrap items-baseline justify-between gap-4 border-b pb-3">
+            <h2 className="text-(length:--text-section) leading-tight">
+              Programs
+            </h2>
+            <NewProgramForm />
+          </div>
 
           {programs.list.length === 0 ? (
             <p className="text-muted-foreground text-sm">
@@ -172,6 +204,6 @@ export default async function TeachPage() {
           )}
         </section>
       )}
-    </main>
+    </div>
   );
 }

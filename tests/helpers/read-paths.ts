@@ -12,6 +12,7 @@ import {
 import {
   countCourseEnrollments,
   listAssignableStaff,
+  listCourseShapes,
   listCoursesForAdmin,
   listProgramsForAdmin,
 } from '@/db/repositories/catalog-admin';
@@ -109,6 +110,20 @@ function lessonIds(tenant: SeedTenant): Set<string> {
 }
 
 export const READ_PATHS: ReadPath[] = [
+  {
+    name: 'catalog-admin.listCourseShapes',
+    async run(scope, subject) {
+      // Named by another institute's course ids. A lost filter would report one
+      // institute's outstanding recordings on another's teaching list.
+      const courseIds = subject.courses.map((course) => course.id);
+      const rows = await listCourseShapes(scope, courseIds);
+      const subjectIds = new Set(courseIds);
+      return ownedBySubject(
+        rows.map((row) => row.courseId),
+        subjectIds,
+      );
+    },
+  },
   {
     name: 'catalog.listCourseTags',
     async run(scope, subject) {

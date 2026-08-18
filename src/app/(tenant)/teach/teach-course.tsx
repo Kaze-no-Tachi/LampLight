@@ -17,10 +17,18 @@ type AdminExtras = {
   unassignedStaff: Staff[];
 };
 
-type Course = {
+export type CourseShapeCounts = {
+  moduleCount: number;
+  lessonCount: number;
+  awaitingAudio: number;
+};
+
+export type Course = {
   id: string;
   title: string;
   enrolledCount: number;
+  /** Sections, lessons, and how many still need a recording. */
+  shape: CourseShapeCounts;
   /**
    * Present for an admin, absent for an instructor: deciding whether a course
    * exists, who teaches it, and whether students can see it is the
@@ -46,6 +54,24 @@ type Course = {
  * nothing else is planned, and a link that would 404 is worse than a label
  * that says so honestly.
  */
+/**
+ * "2 sections, 7 lessons, 1 waiting on audio".
+ *
+ * Clauses that would read as zero are dropped rather than printed: "0 waiting
+ * on audio" is noise on the courses that are finished, which is most of them,
+ * and it buries the one course that is not.
+ */
+function shapeLine(shape: CourseShapeCounts): string {
+  const parts = [
+    `${shape.moduleCount} ${shape.moduleCount === 1 ? 'section' : 'sections'}`,
+    `${shape.lessonCount} ${shape.lessonCount === 1 ? 'lesson' : 'lessons'}`,
+  ];
+  if (shape.awaitingAudio > 0) {
+    parts.push(`${shape.awaitingAudio} waiting on audio`);
+  }
+  return parts.join(' · ');
+}
+
 export function TeachCourse({ course }: { course: Course }) {
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState<string | null>(null);
@@ -81,26 +107,36 @@ export function TeachCourse({ course }: { course: Course }) {
   return (
     <section
       data-testid="course-card"
-      className="flex flex-col gap-4 rounded-lg border p-4"
+      className="border-border bg-card flex flex-col gap-4 rounded-(--radius) border px-6 py-5"
     >
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <div className="flex flex-wrap items-baseline gap-2">
-          <h2 className="text-lg font-semibold tracking-tight">
-            {course.title}
-          </h2>
-          {course.admin && (
-            <span
-              className={
-                course.admin.isPublished
-                  ? 'text-muted-foreground text-xs'
-                  : 'text-destructive text-xs'
-              }
-            >
-              {course.admin.isPublished ? 'published' : 'not published'}
-            </span>
-          )}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h2 className="text-(length:--text-card-title) leading-tight">
+              {course.title}
+            </h2>
+            {course.admin && (
+              // A pill rather than loose grey text: whether students can see a
+              // course is the fact this card exists to report.
+              <span
+                className={`shrink-0 rounded-full px-2.5 py-1 text-[0.71875rem] leading-none font-medium ${
+                  course.admin.isPublished
+                    ? 'bg-accent text-accent-foreground'
+                    : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                {course.admin.isPublished ? 'Published' : 'Draft'}
+              </span>
+            )}
+          </div>
+
+          {/* The one line of the design that is somebody's outstanding job. */}
+          <span className="text-muted-foreground text-(length:--text-label)">
+            {shapeLine(course.shape)}
+          </span>
         </div>
-        <span className="text-muted-foreground text-sm">
+
+        <span className="text-muted-foreground shrink-0 text-(length:--text-label)">
           {course.enrolledCount === 1
             ? '1 person enrolled'
             : `${course.enrolledCount} people enrolled`}
@@ -110,9 +146,9 @@ export function TeachCourse({ course }: { course: Course }) {
       <div className="flex flex-wrap items-center gap-2">
         <Link
           href={`/teach/courses/${course.id}`}
-          className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium"
+          className="bg-primary text-primary-foreground rounded-(--radius) px-[1.125rem] py-[0.6875rem] text-(length:--text-ui) font-medium"
         >
-          Manage lessons
+          Course settings
         </Link>
 
         {course.admin && (
