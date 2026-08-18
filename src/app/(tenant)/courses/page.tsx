@@ -106,7 +106,15 @@ export default async function ShelfPage() {
           </div>
 
           {programs.map((program) => (
-            <Panel key={program.programId} bordered className="bg-card">
+            <Panel
+              key={program.programId}
+              bordered
+              className="bg-card"
+              // Same reasoning as the course row above: the program summary is
+              // an rsuite Panel now, not a list item, and a spec that reaches
+              // for `li` breaks on the next layout change.
+              data-testid="shelf-program"
+            >
               <div className="flex flex-col gap-3">
                 <div className="flex items-baseline justify-between gap-3">
                   <h3 className="text-(length:--text-card-title) leading-tight">

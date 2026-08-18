@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { Input, SelectPicker, Toggle } from 'rsuite';
+import { Input, SelectPicker } from 'rsuite';
 import { Markdown } from '@/lib/markdown/render';
 import {
   assignInstructorAction,
@@ -188,7 +188,13 @@ export function CourseSettings({
       </div>
 
       {isAdmin && (
-        <section className="border-border bg-card flex flex-wrap items-center gap-[18px] rounded-(--radius) border px-6 py-[22px]">
+        // Named because the lesson rows further down this same screen also
+        // offer a Publish button, so "the Publish button" is ambiguous
+        // wherever a course has a draft lesson in it.
+        <section
+          data-testid="publish-card"
+          className="border-border bg-card flex flex-wrap items-center gap-[18px] rounded-(--radius) border px-6 py-[22px]"
+        >
           <div className="flex flex-1 flex-col gap-[3px]">
             <span className="text-(length:--text-ui) font-medium">
               {course.isPublished
@@ -201,13 +207,31 @@ export function CourseSettings({
                 : 'Nothing about this course is public yet, so you can build it in the open.'}
             </span>
           </div>
-          <Toggle
-            checked={course.isPublished}
+          {/*
+            A button, not a toggle, which is what mockup 9 draws and what this
+            control should have been from the start. Two reasons it went back.
+
+            The card already says the state in a sentence, so a switch made the
+            screen state it twice and left the reader working out which half
+            was the control. A button says the act instead.
+
+            And rsuite's Toggle puts a hidden input under a decorated track, so
+            the accessible control is not the thing on screen and nothing can
+            click it: the browser suite spent thirty seconds per attempt being
+            told the track intercepts the pointer. Whether students can see a
+            course is the most consequential switch on this screen, and one no
+            test can reach is one whose behaviour is never actually checked.
+            The same reasoning retired rsuite's DatePicker from the enrolment
+            panel (see docs/plans/rsuite-adoption.md).
+          */}
+          <button
+            type="button"
             disabled={pending}
-            onChange={togglePublished}
-            checkedChildren="Published"
-            unCheckedChildren="Draft"
-          />
+            onClick={togglePublished}
+            className="border-border hover:border-primary shrink-0 cursor-pointer rounded-(--radius) border px-3.5 py-2.5 text-(length:--text-label) font-medium transition-colors disabled:opacity-60"
+          >
+            {course.isPublished ? 'Unpublish' : 'Publish'}
+          </button>
         </section>
       )}
 

@@ -42,9 +42,11 @@ test.describe('an admin building a catalogue', () => {
     // four-field form that used to sit inline on the teaching list.
     await createCourse(page, NAME, { slug: 'church-history-test' });
 
-    // Publish state is a toggle on course settings now rather than a button on
-    // the list, so the whole cycle happens on the screen that owns it.
-    const publish = page.getByRole('switch');
+    // Publish state lives on course settings now rather than on the list, so
+    // the whole cycle happens on the screen that owns it.
+    const publish = page
+      .getByTestId('publish-card')
+      .getByRole('button', { name: /^(Publish|Unpublish)$/ });
     await expect(page.getByText('A draft, visible only here')).toBeVisible();
 
     // Unpublished means invisible, which is the half that is easy to get wrong.
@@ -67,7 +69,10 @@ test.describe('an admin building a catalogue', () => {
 
     // And withdrawing takes it back out, which is the half everybody forgets.
     await openCourseSettings(page, NAME);
-    await page.getByRole('switch').click();
+    await page
+      .getByTestId('publish-card')
+      .getByRole('button', { name: /^Unpublish$/ })
+      .click();
     await expect(page.getByText('A draft, visible only here')).toBeVisible();
 
     await visitor.reload();
@@ -305,7 +310,10 @@ test.describe('adding lessons', () => {
 
     // Publish the course and check a visitor gets the free preview lesson,
     // which is the whole chain: created, listed, visible.
-    await page.getByRole('switch').click();
+    await page
+      .getByTestId('publish-card')
+      .getByRole('button', { name: /^Publish$/ })
+      .click();
     await expect(page.getByText('On your catalogue')).toBeVisible();
 
     const visitor = await context.newPage();
@@ -469,11 +477,11 @@ test.describe('the student shelf and self-enrolment', () => {
 
     // The diploma program this course belongs to gets its own summary too.
     // Every one of its three courses also names the program on its own shelf
-    // row ("Via Diploma in Biblical Studies"), so the percent sign is what
-    // singles out the program's own card: no per-course row shows one.
+    // row ("via Diploma in Biblical Studies"), so the card's own test id is
+    // what singles it out.
     const program = page
-      .locator('li', { hasText: 'Diploma in Biblical Studies' })
-      .filter({ hasText: '%' });
+      .locator('[data-testid="shelf-program"]')
+      .filter({ hasText: 'Diploma in Biblical Studies' });
     await expect(program).toBeVisible();
     await expect(program).toContainText('0%');
   });

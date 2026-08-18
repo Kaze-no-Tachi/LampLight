@@ -57,7 +57,10 @@ test.describe('playing a lecture', () => {
 
     const before = await audioState(page);
 
-    await page.getByRole('link', { name: 'Courses', exact: true }).click();
+    // "My study" is the shelf. The header's "Courses" is the public catalogue,
+    // which is a different screen and was what this clicked into after the
+    // reskin renamed both.
+    await page.getByRole('link', { name: 'My study', exact: true }).click();
     await page.waitForURL('**/courses');
 
     await expect
