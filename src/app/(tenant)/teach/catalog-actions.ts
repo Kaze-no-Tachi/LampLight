@@ -10,7 +10,9 @@ import {
   createCourse,
   createProgram,
   removeInstructor,
+  setCoursePricing,
   setCoursePublished,
+  setCourseTags,
   setProgramPublished,
   setProgramCourses,
 } from '@/lib/catalog/authoring';
@@ -44,6 +46,10 @@ export async function createCourseAction(
 ): Promise<CreateCourseResult> {
   const viewer = await requireRole('admin');
 
+  const tags = formData.getAll('tags').map(String);
+  const instructorId = String(formData.get('instructorId') ?? '');
+  const pricing = readPricing(formData);
+
   const result = await getTenantDb(viewer.tenant.id).run(async (scope) => {
     const created = await createCourse(scope, {
       title: String(formData.get('title') ?? ''),
@@ -51,15 +57,26 @@ export async function createCourseAction(
       descriptionMd: String(formData.get('description') ?? ''),
     });
 
-    if (created.status === 'ok') {
-      await scope.tx.insert(auditLog).values({
-        tenantId: scope.tenantId,
-        actorUserId: viewer.userId,
-        action: 'catalog.course_created',
-        targetType: 'course',
-        targetId: created.id,
-      });
+    if (created.status !== 'ok') return created;
+
+    // Everything the new-course screen collects, applied in the one
+    // transaction that created the course. The alternative, a create followed
+    // by three separate actions from the browser, leaves a course half set up
+    // whenever one of them fails or the tab is closed between them, and the
+    // half that is missing is the half a visitor would have read.
+    await setCourseTags(scope, created.id, tags);
+    if (pricing) await setCoursePricing(scope, created.id, pricing);
+    if (instructorId) {
+      await assignInstructor(scope, created.id, instructorId);
     }
+
+    await scope.tx.insert(auditLog).values({
+      tenantId: scope.tenantId,
+      actorUserId: viewer.userId,
+      action: 'catalog.course_created',
+      targetType: 'course',
+      targetId: created.id,
+    });
 
     return created;
   });
@@ -68,6 +85,68 @@ export async function createCourseAction(
 
   revalidatePath('/teach');
   return { status: 'ok', courseId: result.id };
+}
+
+/**
+ * "How it is sold", as three choices rather than two fields.
+ *
+ * The screen offers Sold on its own, Program only, and Free, because that is
+ * how the decision is actually made. Underneath it is a price and a
+ * purchasable flag, and this is where one turns into the other, so that no
+ * caller has to remember that "free" also means purchasable or that
+ * "program only" ignores whatever is in the price box.
+ *
+ * Returns null when the form carried no pricing at all, which is what an
+ * instructor's save looks like: the block is admin-only, so it is simply
+ * absent rather than sent empty.
+ */
+function readPricing(
+  formData: FormData,
+): { priceCents: number; isStandalonePurchasable: boolean } | null {
+  const sold = String(formData.get('sold') ?? '');
+  if (sold === '') return null;
+
+  if (sold === 'program') {
+    return { priceCents: 0, isStandalonePurchasable: false };
+  }
+  if (sold === 'free') {
+    return { priceCents: 0, isStandalonePurchasable: true };
+  }
+
+  // Dollars in the box, cents in the column. A price that will not parse is
+  // taken as nothing rather than refused: the field is a number input and the
+  // states that reach here are an empty box and a stray character.
+  const dollars = Number.parseFloat(String(formData.get('price') ?? ''));
+  const priceCents = Number.isFinite(dollars) ? Math.round(dollars * 100) : 0;
+  return { priceCents, isStandalonePurchasable: true };
+}
+
+/**
+ * Changing what an existing course costs. Admin only, the same as publishing:
+ * an assigned instructor writes the course, the institute decides what it is
+ * worth.
+ */
+export async function setCoursePricingAction(
+  formData: FormData,
+): Promise<CatalogResult> {
+  const viewer = await requireRole('admin');
+  const courseId = String(formData.get('courseId') ?? '');
+  const pricing = readPricing(formData);
+
+  if (!pricing) return { status: 'error', message: 'Nothing to change.' };
+
+  const done = await getTenantDb(viewer.tenant.id).run((scope) =>
+    setCoursePricing(scope, courseId, pricing),
+  );
+
+  if (done.status === 'not_found') {
+    return { status: 'error', message: 'That course no longer exists.' };
+  }
+
+  revalidatePath('/teach');
+  revalidatePath(`/teach/courses/${courseId}`);
+  revalidatePath('/catalogue', 'layout');
+  return { status: 'ok' };
 }
 
 /**

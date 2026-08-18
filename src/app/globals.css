@@ -92,6 +92,13 @@
   --text-card-title: 1.4375rem; /* 23px, card titles */
   --text-section: 1.625rem; /* 26px, section headings */
   --text-page: 2.375rem; /* 38px, course titles */
+  /*
+   * Staff titles sit a step below the student ones. The design sets a page
+   * title at 30px behind the 236px sidebar and 38px on the full-width student
+   * surfaces, and it is right: the sidebar already establishes where you are,
+   * so the heading has less work to do and 38px beside it reads as shouting.
+   */
+  --text-staff-page: 1.875rem; /* 30px, staff page titles */
   --text-hero: 2.625rem; /* 42px, catalog hero */
 
   --radius-sm: calc(var(--radius) - 4px);

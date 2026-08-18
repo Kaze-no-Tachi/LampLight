@@ -1,6 +1,19 @@
-import { and, asc, desc, eq, gt, inArray, isNull, lt } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  lt,
+  notInArray,
+  sql,
+} from 'drizzle-orm';
 import {
   courseInstructors,
+  courseTagLinks,
+  courseTags,
   courses,
   lessons,
   memberships,
@@ -10,6 +23,7 @@ import {
   programs,
 } from '@/db/schema';
 import type { TenantScope } from '@/db/scope';
+import { toSlug } from './slug';
 
 /**
  * Creating the things an institute teaches.
@@ -40,16 +54,6 @@ import type { TenantScope } from '@/db/scope';
 
 export type AuthoringResult =
   { status: 'ok'; id: string } | { status: 'error'; message: string };
-
-/** Lowercase, hyphenated, and nothing that would need escaping in a URL. */
-export function toSlug(value: string): string {
-  return value
-    .normalize('NFKD')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80);
-}
 
 function checkTitleAndSlug(
   title: string,
@@ -247,6 +251,179 @@ export async function archiveCourse(
     .returning({ id: courses.id });
 
   return archived ? { status: 'ok' } : { status: 'not_found' };
+}
+
+/**
+ * How a course is sold: on its own for a price, only inside a program, or for
+ * nothing at all.
+ *
+ * The price lives on the product, the "may somebody buy this by itself"
+ * question lives on the course, and the catalogue reads both to decide what a
+ * row says. They are set together here because they are one decision to the
+ * person making it, and setting half of it produces states nobody meant: a
+ * course that is program-only and carries a price, or a free course that is
+ * not purchasable and so reads as unavailable.
+ *
+ * Nothing here takes a payment. Checkout is not built, and this only decides
+ * what the catalogue says.
+ */
+export async function setCoursePricing(
+  scope: TenantScope,
+  courseId: string,
+  input: { priceCents: number; isStandalonePurchasable: boolean },
+): Promise<{ status: 'ok' } | { status: 'not_found' }> {
+  const [course] = await scope.tx
+    .select({ productId: courses.productId })
+    .from(courses)
+    .where(and(eq(courses.tenantId, scope.tenantId), eq(courses.id, courseId)))
+    .limit(1);
+
+  if (!course) return { status: 'not_found' };
+
+  // Whole cents, never negative, and short of the point where an integer
+  // column would be the least of anybody's problems.
+  const priceCents = Math.min(
+    Math.max(Math.round(input.priceCents), 0),
+    100_000_00,
+  );
+
+  await scope.tx
+    .update(products)
+    .set({ priceCents })
+    .where(
+      and(
+        eq(products.tenantId, scope.tenantId),
+        eq(products.id, course.productId),
+      ),
+    );
+
+  await scope.tx
+    .update(courses)
+    .set({ isStandalonePurchasable: input.isStandalonePurchasable })
+    .where(and(eq(courses.tenantId, scope.tenantId), eq(courses.id, courseId)));
+
+  return { status: 'ok' };
+}
+
+/** No course carries more subjects than this, and no label runs longer. */
+const MAX_TAGS_PER_COURSE = 12;
+const MAX_TAG_LABEL = 40;
+
+/**
+ * Replaces a course's tags, creating any the institute has not used before.
+ *
+ * The vocabulary is tenant-owned (see course_tags in src/db/schema/catalog.ts)
+ * and has no screen of its own, so it is maintained entirely as a side effect
+ * of tagging courses: a label nobody has used yet is created here, and one
+ * that has just lost its last course is deleted at the end.
+ *
+ * DELETING THE ORPHANS IS NOT TIDINESS. The catalogue's filter chips are the
+ * whole vocabulary (listCourseTags, called from the catalogue page), so a tag
+ * left behind with no courses on it becomes a chip that filters the catalogue
+ * down to nothing. Either the chips stop being the vocabulary or the
+ * vocabulary stops holding what nothing uses, and the second is the one that
+ * also keeps the "already used here" suggestions on this screen honest.
+ *
+ * Matched on the slug rather than the label, so "Old Testament" typed on one
+ * course and "old testament" typed on another are the same tag rather than
+ * two chips that look identical in the filter row.
+ */
+export async function setCourseTags(
+  scope: TenantScope,
+  courseId: string,
+  labels: string[],
+): Promise<{ status: 'ok' } | { status: 'not_found' }> {
+  const [course] = await scope.tx
+    .select({ id: courses.id })
+    .from(courses)
+    .where(and(eq(courses.tenantId, scope.tenantId), eq(courses.id, courseId)))
+    .limit(1);
+
+  if (!course) return { status: 'not_found' };
+
+  const wanted = new Map<string, string>();
+  for (const raw of labels) {
+    const label = raw.trim().replace(/\s+/g, ' ').slice(0, MAX_TAG_LABEL);
+    const slug = toSlug(label);
+    if (!slug || wanted.has(slug)) continue;
+    if (wanted.size >= MAX_TAGS_PER_COURSE) break;
+    wanted.set(slug, label);
+  }
+
+  const slugs = [...wanted.keys()];
+
+  if (slugs.length > 0) {
+    // Inserted before the lookup rather than after it, and conflicts ignored:
+    // two courses being tagged with the same new subject at the same moment
+    // would otherwise race on course_tags_tenant_id_slug_key and one of them
+    // would fail on a label the institute plainly already wanted. Ignoring
+    // the conflict also leaves an existing label alone, which is right:
+    // renaming the vocabulary is a different act from using it.
+    await scope.tx
+      .insert(courseTags)
+      .values(
+        slugs.map((slug) => ({
+          tenantId: scope.tenantId,
+          slug,
+          label: wanted.get(slug) ?? slug,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+
+  const vocabulary =
+    slugs.length > 0
+      ? await scope.tx
+          .select({ id: courseTags.id, slug: courseTags.slug })
+          .from(courseTags)
+          .where(
+            and(
+              eq(courseTags.tenantId, scope.tenantId),
+              inArray(courseTags.slug, slugs),
+            ),
+          )
+      : [];
+
+  const tagIds = vocabulary.map((row) => row.id);
+
+  await scope.tx
+    .delete(courseTagLinks)
+    .where(
+      and(
+        eq(courseTagLinks.tenantId, scope.tenantId),
+        eq(courseTagLinks.courseId, courseId),
+        ...(tagIds.length > 0
+          ? [notInArray(courseTagLinks.tagId, tagIds)]
+          : []),
+      ),
+    );
+
+  if (tagIds.length > 0) {
+    await scope.tx
+      .insert(courseTagLinks)
+      .values(
+        tagIds.map((tagId) => ({
+          tenantId: scope.tenantId,
+          courseId,
+          tagId,
+        })),
+      )
+      .onConflictDoNothing();
+  }
+
+  // Scoped to this tenant like everything else, so one institute abandoning a
+  // subject cannot reach another institute's identically named one.
+  await scope.tx.delete(courseTags).where(
+    and(
+      eq(courseTags.tenantId, scope.tenantId),
+      sql`not exists (
+        select 1 from course_tag_links l
+        where l.tenant_id = ${courseTags.tenantId} and l.tag_id = ${courseTags.id}
+      )`,
+    ),
+  );
+
+  return { status: 'ok' };
 }
 
 /**

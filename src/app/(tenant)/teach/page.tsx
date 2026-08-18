@@ -11,7 +11,7 @@ import {
 import { courseInstructors, courses } from '@/db/schema';
 import { can } from '@/lib/access/can';
 import { requireViewer } from '@/lib/auth/guards';
-import { NewCourseForm } from './new-course-form';
+import Link from 'next/link';
 import { NewProgramForm, ProgramRow } from './programs';
 import { TeachList } from './teach-list';
 
@@ -44,7 +44,9 @@ export const dynamic = 'force-dynamic';
  * a minute ago.
  */
 function shapeOf(
-  row: { moduleCount: number; lessonCount: number; awaitingAudio: number } | undefined,
+  row:
+    | { moduleCount: number; lessonCount: number; awaitingAudio: number }
+    | undefined,
 ): { moduleCount: number; lessonCount: number; awaitingAudio: number } {
   return row ?? { moduleCount: 0, lessonCount: 0, awaitingAudio: 0 };
 }
@@ -148,28 +150,35 @@ export default async function TeachPage() {
   );
 
   return (
-    <div className="flex max-w-[900px] flex-col gap-12">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-(length:--text-page) leading-[1.15] tracking-[-0.01em]">
-          Teaching
-        </h1>
-        <p className="text-muted-foreground text-(length:--text-body) leading-[1.6]">
-          {isAdmin
-            ? 'Every course at this institute.'
-            : 'The courses you are assigned to.'}
-        </p>
+    <div className="flex max-w-[1000px] flex-col gap-7">
+      {/* The mockup's own header shape: the one thing an admin comes here to
+          start sits on the title line, not below the list it would join. */}
+      <header className="border-border flex flex-wrap items-end justify-between gap-5 border-b pb-[18px]">
+        <div className="flex flex-col gap-1.5">
+          <h1 className="text-(length:--text-staff-page) leading-[1.2]">
+            Teaching
+          </h1>
+          <p className="text-muted-foreground text-(length:--text-ui) leading-[1.6]">
+            {isAdmin
+              ? 'Every course at this institute.'
+              : 'The courses you are assigned to.'}
+          </p>
+        </div>
+        {isAdmin && (
+          <Link
+            href="/teach/courses/new"
+            className="bg-primary text-primary-foreground rounded-(--radius) px-4 py-2.5 text-(length:--text-ui) font-medium"
+          >
+            New course
+          </Link>
+        )}
       </header>
 
       <section className="flex flex-col gap-[18px]">
-        <div className="border-border flex flex-wrap items-baseline justify-between gap-4 border-b pb-3">
-          <h2 className="text-(length:--text-section) leading-tight">Courses</h2>
-          {isAdmin && <NewCourseForm />}
-        </div>
-
         {view.length === 0 ? (
           <p className="text-muted-foreground text-(length:--text-ui)">
             {isAdmin
-              ? 'Nothing yet. Create the first course above.'
+              ? 'Nothing yet. New course is the button above.'
               : 'You are not assigned to any courses yet. An admin can assign you.'}
           </p>
         ) : (
@@ -178,7 +187,7 @@ export default async function TeachPage() {
       </section>
 
       {programs && (
-        <section className="flex flex-col gap-[18px]">
+        <section className="mt-6 flex flex-col gap-[18px]">
           <div className="border-border flex flex-wrap items-baseline justify-between gap-4 border-b pb-3">
             <h2 className="text-(length:--text-section) leading-tight">
               Programs
