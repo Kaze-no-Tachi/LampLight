@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { Checkbox, DatePicker, Input, SelectPicker } from 'rsuite';
+import { Checkbox, Input, SelectPicker } from 'rsuite';
 import type { GrantableSource } from '@/db/repositories/entitlements';
 import { grantAction, revokeAction } from './actions';
 
@@ -46,7 +46,7 @@ export function AccessPanel({
 }) {
   const router = useRouter();
   const [source, setSource] = useState<string | null>(null);
-  const [expiresAt, setExpiresAt] = useState<Date | null>(null);
+  const [expiresAt, setExpiresAt] = useState('');
   const [scholarship, setScholarship] = useState(false);
   const [reason, setReason] = useState('');
   const [message, setMessage] = useState<string | null>(null);
@@ -58,10 +58,9 @@ export function AccessPanel({
     const data = new FormData();
     data.set('userId', userId);
     data.set('source', source);
-    // The date input speaks local time; the column is a timestamp. Sent as the
-    // plain day so the server reads the day the admin picked rather than the
-    // day it happened to be in UTC when they picked it.
-    data.set('expiresAt', expiresAt ? toPlainDate(expiresAt) : '');
+    // Already yyyy-mm-dd, which is what a native date input reports and what
+    // the action parses.
+    data.set('expiresAt', expiresAt);
     data.set('reason', scholarship ? `Scholarship. ${reason}`.trim() : reason);
 
     startTransition(async () => {
@@ -70,7 +69,7 @@ export function AccessPanel({
       setMessage(outcome.status === 'ok' ? 'Access granted' : null);
       if (outcome.status === 'ok') {
         setSource(null);
-        setExpiresAt(null);
+        setExpiresAt('');
         setScholarship(false);
         setReason('');
         router.refresh();
@@ -86,8 +85,13 @@ export function AccessPanel({
     startTransition(async () => {
       const outcome = await revokeAction(data);
       setError(outcome.status === 'error' ? outcome.message : null);
-      setMessage(outcome.status === 'ok' ? (outcome.message ?? null) : null);
-      if (outcome.status === 'ok') router.refresh();
+      // Deliberately says nothing on success. The row leaving the list is the
+      // report, and the only place this component has to put a message is the
+      // grant button, which must not start reading "Access removed."
+      if (outcome.status === 'ok') {
+        setMessage(null);
+        router.refresh();
+      }
     });
   }
 
@@ -157,15 +161,20 @@ export function AccessPanel({
           </span>
         </Checkbox>
 
+        {/*
+          A native date input rather than rsuite's DatePicker. The picker looks
+          better and cannot be driven reliably from the browser suite, and an
+          expiry that silently does not get set is the kind of thing this panel
+          must not be able to do quietly. The native control also brings the
+          platform's own keyboard and locale handling for free.
+        */}
         <label className="text-muted-foreground flex flex-col gap-1 text-(length:--text-label)">
           Expires
-          <DatePicker
+          <input
+            type="date"
             value={expiresAt}
-            onChange={setExpiresAt}
-            format="yyyy-MM-dd"
-            placeholder="No end date"
-            oneTap
-            block
+            onChange={(event) => setExpiresAt(event.target.value)}
+            className="border-border bg-background text-foreground rounded-(--radius) border px-2.5 py-2 text-(length:--text-label)"
           />
         </label>
 
@@ -201,13 +210,6 @@ export function AccessPanel({
       </div>
     </>
   );
-}
-
-/** yyyy-mm-dd in the admin's own timezone, not UTC's idea of the same moment. */
-function toPlainDate(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${date.getFullYear()}-${month}-${day}`;
 }
 
 /** "Course, purchased" / "Program, scholarship, to Jun 2027" / "expired Mar 2026". */

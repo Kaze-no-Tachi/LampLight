@@ -90,3 +90,86 @@ export async function audioState(page: Page): Promise<{
     };
   });
 }
+
+/**
+ * The authoring flows, in one place, because the reskin moved all three of
+ * them and four specs drove each one by hand.
+ *
+ * Creating a course and adding a lesson are now pages rather than an inline
+ * form and a modal (mockups 7 and 8). That is a shape change, not a selector
+ * change: both end somewhere new, and every caller needs the same two waits.
+ * Written here once so the next move only breaks one file.
+ */
+
+/** Creates a course through the new-course screen. Returns its id. */
+export async function createCourse(
+  page: Page,
+  title: string,
+  options: { slug?: string } = {},
+): Promise<string> {
+  await page.goto(url(GRACE_HOST, '/teach/courses/new'));
+  await page.locator('input[placeholder="The Minor Prophets"]').fill(title);
+
+  if (options.slug) {
+    // The address is derived from the title unless somebody asks for the
+    // field, which is the whole point of that disclosure.
+    await page
+      .getByRole('button', { name: /set the address yourself/i })
+      .click();
+    await page.locator('input[aria-label="Web address"]').fill(options.slug);
+  }
+
+  await page.getByRole('button', { name: /^Create course$/ }).click();
+
+  // Lands in the course's own settings (round 2 decision), which is also where
+  // its id first appears in a URL.
+  await page.waitForURL('**/teach/courses/*');
+  const id = new URL(page.url()).pathname.split('/').pop();
+  if (!id) throw new Error(`created "${title}" but landed on ${page.url()}`);
+  return id;
+}
+
+/**
+ * Adds a lesson to a course and comes back to its settings.
+ *
+ * Creating a lesson opens its editor, because the recording and the notes are
+ * the next thing anybody does. Tests that are asserting about the course's own
+ * list want to be back on it, so this returns there and hands back the lesson
+ * id it passed through.
+ */
+export async function addLesson(
+  page: Page,
+  courseId: string,
+  title: string,
+  options: { openToEveryone?: boolean } = {},
+): Promise<string> {
+  await page.goto(url(GRACE_HOST, `/teach/courses/${courseId}/lessons/new`));
+  await page
+    .locator('input[placeholder="Hosea and a marriage as a sign"]')
+    .fill(title);
+
+  if (options.openToEveryone) {
+    await page.getByText('Open to everyone', { exact: true }).click();
+  }
+
+  await page.getByRole('button', { name: /^Create lesson$/ }).click();
+  await page.waitForURL('**/teach/lessons/*');
+  const lessonId = new URL(page.url()).pathname.split('/').pop() ?? '';
+
+  await page.goto(url(GRACE_HOST, `/teach/courses/${courseId}`));
+  return lessonId;
+}
+
+/** Opens a named course's settings from the teaching list. */
+export async function openCourseSettings(
+  page: Page,
+  courseTitle: string,
+): Promise<void> {
+  await page.goto(url(GRACE_HOST, '/teach'));
+  await page
+    .locator('[data-testid="course-card"]', { hasText: courseTitle })
+    .first()
+    .getByRole('link', { name: /^Course settings$/ })
+    .click();
+  await page.waitForURL('**/teach/courses/*');
+}

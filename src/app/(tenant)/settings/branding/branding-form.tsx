@@ -182,6 +182,30 @@ export function BrandingForm({
               }
               className="border-border h-[34px] w-[34px] cursor-pointer rounded-lg border"
             />
+
+            {/*
+              The hex, typed. An institute with a brand book has a value to
+              paste, and the swatches beside this are four approximations of
+              it. It is also the only one of these three controls somebody can
+              put a wrong value into, which is why saveBrandingAction validates
+              the colour rather than trusting that a picker was used: an
+              unparsed value would end up in a stylesheet on the institute's
+              own domain in front of its own students.
+            */}
+            <input
+              value={theme.brand ?? ''}
+              onChange={(event) =>
+                edit(() =>
+                  setTheme((current) => ({
+                    ...current,
+                    brand: event.target.value || null,
+                  })),
+                )
+              }
+              placeholder={PRESETS[theme.preset].primary}
+              aria-label="Brand colour as hex"
+              className="border-border bg-background text-foreground w-28 rounded-(--radius) border px-2.5 py-2 font-mono text-(length:--text-meta)"
+            />
           </div>
 
           {/*
