@@ -1,4 +1,4 @@
-import { Divider, Panel } from 'rsuite';
+import { Button, Divider, Panel, Tag } from 'rsuite';
 import { themeCss } from '@/lib/theme/theme';
 import { requireApex } from '@/lib/tenancy/context';
 import { RsuiteProvider } from '../../(tenant)/rsuite-provider';
@@ -17,6 +17,11 @@ import { RsuiteProvider } from '../../(tenant)/rsuite-provider';
  * inlined with the fixed "classic" preset rather than a per-institute
  * lookup, since there is no institute here and no other Lamplight brand
  * color declared anywhere yet.
+ *
+ * The header's Sign in is disabled and badged "Coming soon" rather than
+ * linked anywhere: the only working sign-in at the apex today is the
+ * platform-operator console, and a stranger clicking a plain "Sign in"
+ * button expecting to reach their own institute would land there instead.
  */
 export const dynamic = 'force-dynamic';
 
@@ -53,10 +58,18 @@ export default async function PlatformHome() {
       </style>
       <RsuiteProvider>
         <div className="flex min-h-screen flex-col">
-          <header className="mx-auto flex w-full max-w-4xl items-center p-8">
+          <header className="mx-auto flex w-full max-w-4xl items-center justify-between p-8">
             <span className="text-lg font-semibold tracking-tight">
               Lamplight
             </span>
+            <div className="flex items-center gap-2">
+              <Button appearance="ghost" disabled>
+                Sign in
+              </Button>
+              <Tag color="orange" size="sm">
+                Coming soon
+              </Tag>
+            </div>
           </header>
 
           <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col gap-10 px-8 pb-16">
