@@ -101,3 +101,47 @@ export function excerpt(markdown: string | null, limit = 180): string {
   const lastSpace = clipped.lastIndexOf(' ');
   return `${clipped.slice(0, lastSpace > 0 ? lastSpace : limit).trimEnd()}…`;
 }
+
+/**
+ * "12 min left of 41", for the card that resumes a part-heard lesson.
+ *
+ * Minutes rather than a timecode: this is read as an answer to "have I got
+ * time for this tonight", and 41:03 makes that arithmetic the reader's job.
+ *
+ * Returns null when the lesson has no recording yet, so the caller drops the
+ * clause instead of claiming "0 min left of 0".
+ */
+export function timeLeft(
+  positionSeconds: number,
+  durationSeconds: number | null,
+): string | null {
+  if (durationSeconds === null || durationSeconds <= 0) return null;
+
+  const total = Math.max(1, Math.round(durationSeconds / 60));
+  const remaining = Math.max(
+    0,
+    Math.round((durationSeconds - positionSeconds) / 60),
+  );
+
+  // Under a minute to go still reads as started rather than finished, which is
+  // what the shelf is describing.
+  if (remaining === 0) return `almost done, of ${total} min`;
+  return `${remaining} min left of ${total}`;
+}
+
+/** "Good morning" / "Good afternoon" / "Good evening", from the server clock. */
+export function greeting(now: Date): string {
+  const hour = now.getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
+/** The name someone is greeted by: their first word, or their address. */
+export function firstName(name: string | null, email: string): string {
+  const trimmed = (name ?? '').trim();
+  if (trimmed) return trimmed.split(/\s+/)[0] ?? trimmed;
+  // An address with no local part is not a real address, but the greeting is
+  // not the place to find that out.
+  return email.split('@')[0] || email;
+}
