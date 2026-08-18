@@ -69,6 +69,31 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  /*
+   * Typography. Spectral carries titles and anything read at length; Karla
+   * carries every piece of interface text. Both are platform-level and are
+   * absent from THEME_TOKENS on purpose, so a tenant cannot reach them.
+   */
+  --font-sans: var(--font-karla), system-ui, sans-serif;
+  --font-serif: var(--font-spectral), Georgia, serif;
+  --font-mono: ui-monospace, Menlo, monospace;
+
+  /*
+   * The scale the design uses. Half-pixel sizes are deliberate: they are what
+   * keeps Karla's interface text from sitting a step too large next to
+   * Spectral's titles, and rounding them to Tailwind's defaults visibly
+   * coarsens the design.
+   */
+  --text-meta: 0.78125rem; /* 12.5px, helper and meta text */
+  --text-label: 0.84375rem; /* 13.5px, labels and table text */
+  --text-ui: 0.90625rem; /* 14.5px, buttons and controls */
+  --text-body: 1.03125rem; /* 16.5px, body copy and lesson notes */
+  --text-row-title: 1.25rem; /* 20px, list row titles */
+  --text-card-title: 1.4375rem; /* 23px, card titles */
+  --text-section: 1.625rem; /* 26px, section headings */
+  --text-page: 2.375rem; /* 38px, course titles */
+  --text-hero: 2.625rem; /* 42px, catalog hero */
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -82,5 +107,19 @@
   body {
     background-color: var(--background);
     color: var(--foreground);
+    font-family: var(--font-sans);
+  }
+
+  /*
+   * Titles are set in Spectral and break on sense rather than on the last
+   * word, which matters most for the two- and three-line course titles the
+   * catalog is full of.
+   */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    text-wrap: pretty;
   }
 }

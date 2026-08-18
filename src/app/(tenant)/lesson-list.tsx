@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import { timecode } from '@/lib/format';
 import { ConfirmModal } from './confirm-modal';
 import {
   archiveLessonAction,
@@ -28,12 +29,6 @@ import {
  * every other action in this codebase does.
  */
 
-function formatDuration(seconds: number | null): string {
-  if (!seconds) return '';
-  const minutes = Math.round(seconds / 60);
-  return `${minutes} min`;
-}
-
 /** Shared with teach/lesson-row.tsx (round 2, chunk 5). */
 export function FreePreviewBadge() {
   return (
@@ -54,46 +49,52 @@ export type StudentLesson = {
 
 function StudentLessonList({ lessons }: { lessons: StudentLesson[] }) {
   return (
-    <ol className="flex flex-col gap-2">
+    <ol className="border-border bg-card overflow-hidden rounded-(--radius) border">
       {lessons.map((lesson, index) => (
         <li
           key={lesson.id}
-          className="flex items-center justify-between gap-4 rounded-lg border p-4"
+          className="border-border hover:bg-muted flex items-center gap-4 px-6 py-4 transition-colors not-first:border-t"
         >
-          <span className="flex items-baseline gap-3">
-            <span className="text-muted-foreground font-mono text-sm">
-              {String(index + 1).padStart(2, '0')}
-            </span>
-            {lesson.open ? (
-              // Open lessons are underlined rather than only being links.
-              // Without a visible affordance the two states render almost
-              // identically, and a student cannot tell what they may click
-              // from what they may not, which is the one thing this page
-              // exists to communicate.
-              <Link
-                href={`/lessons/${lesson.id}`}
-                className="decoration-muted-foreground/40 font-medium underline underline-offset-4 hover:decoration-current"
-              >
-                {lesson.title}
-              </Link>
-            ) : (
-              // Locked lessons still show their title. The catalogue is
-              // public and the titles are how somebody decides whether to
-              // enrol; it is the audio that is gated, and that is gated at
-              // issuance.
-              <span className="text-muted-foreground">{lesson.title}</span>
-            )}
+          <span className="text-muted-foreground w-6 shrink-0 font-mono text-(length:--text-label)">
+            {String(index + 1).padStart(2, '0')}
           </span>
 
-          <span className="text-muted-foreground flex items-center gap-2 text-xs whitespace-nowrap">
-            {lesson.isFreePreview && <FreePreviewBadge />}
-            {lesson.open ? (
-              formatDuration(lesson.durationSeconds)
-            ) : (
-              <span aria-label="Locked" title="Locked">
-                Locked
-              </span>
-            )}
+          {lesson.open ? (
+            // Open lessons are underlined rather than only being links.
+            // Without a visible affordance the two states render almost
+            // identically, and a student cannot tell what they may click
+            // from what they may not, which is the one thing this page
+            // exists to communicate.
+            <Link
+              href={`/lessons/${lesson.id}`}
+              className="flex-1 font-serif text-(length:--text-body) leading-snug underline-offset-4 hover:underline"
+            >
+              {lesson.title}
+            </Link>
+          ) : (
+            // Locked lessons still show their title, dimmed rather than
+            // removed. The catalogue is public and the titles are how
+            // somebody decides whether to enrol; it is the audio that is
+            // gated, and that is gated at issuance.
+            <span className="flex-1 font-serif text-(length:--text-body) leading-snug opacity-55">
+              {lesson.title}
+            </span>
+          )}
+
+          {lesson.isFreePreview ? (
+            <span className="bg-accent text-accent-foreground shrink-0 rounded-full px-2.5 py-1 text-[0.71875rem] leading-none font-medium whitespace-nowrap">
+              Free lesson
+            </span>
+          ) : !lesson.open ? (
+            <span className="bg-muted text-muted-foreground shrink-0 rounded-full px-2.5 py-1 text-[0.71875rem] leading-none font-medium whitespace-nowrap">
+              Locked
+            </span>
+          ) : null}
+
+          {/* Locked rows show no duration: it is one more measurement of what
+              is being withheld, and denial here never reads as an error. */}
+          <span className="text-muted-foreground w-14 shrink-0 text-right font-mono text-(length:--text-label)">
+            {lesson.open ? (timecode(lesson.durationSeconds) ?? '') : ''}
           </span>
         </li>
       ))}

@@ -62,6 +62,21 @@ function Wordmark({ branding }: { branding: Branding }) {
   );
 }
 
+/**
+ * One nav link. Sized from the interface scale so the row stays on a single
+ * baseline whatever the institute's radius or brand does.
+ */
+function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <Link
+      href={href}
+      className="text-(length:--text-ui) font-medium opacity-85 hover:opacity-100"
+    >
+      {children}
+    </Link>
+  );
+}
+
 export function SiteHeader({
   branding,
   viewer,
@@ -71,68 +86,64 @@ export function SiteHeader({
 }) {
   return (
     <header className="border-border bg-card border-b">
-      <nav className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-6 py-4">
-        <Link href="/" className="mr-auto flex items-center gap-3">
+      <nav className="mx-auto flex max-w-[1080px] flex-wrap items-center gap-x-6 gap-y-2 px-8 py-4">
+        <Link href="/" className="mr-3 flex items-center gap-2.5">
           <Wordmark branding={branding} />
         </Link>
 
+        {/*
+          Browsing and studying are two different questions, so they are two
+          different links rather than one that changes meaning. Previously
+          "Courses" pointed at the shelf once signed in, which left a student
+          with no way back to the public catalogue from the nav at all.
+        */}
+        <NavLink href="/catalogue">Courses</NavLink>
+
         {/* /courses is the shelf, gated on a membership; a visitor or a
-            session with no standing here has nothing to shelve, so they go to
-            the public catalogue instead. */}
-        <Link
-          href={viewer ? '/courses' : '/catalogue'}
-          className="text-sm hover:underline"
-        >
-          Courses
-        </Link>
+            session with no standing here has nothing to shelve. */}
+        {viewer ? <NavLink href="/courses">My study</NavLink> : null}
 
         {/* Only shown to people who have somewhere to go. An instructor link on
             a student's screen is a 404 waiting to be clicked. */}
         {viewer && viewer.role !== 'student' ? (
-          <Link href="/teach" className="text-sm hover:underline">
-            Teach
-          </Link>
+          <NavLink href="/teach">Teach</NavLink>
         ) : null}
 
         {/* Every admin screen, not a sample of them. Domains and Signup were
             built and linked from nowhere, so the only way to reach them was to
-            know the URL, and Catalogue is where courses come from at all. A
-            screen nobody can navigate to may as well not exist. */}
+            know the URL. A screen nobody can navigate to may as well not
+            exist. */}
         {viewer?.role === 'admin' ? (
           <>
-            <Link href="/catalogue" className="text-sm hover:underline">
-              Catalogue
-            </Link>
-            <Link href="/settings/people" className="text-sm hover:underline">
-              People
-            </Link>
-            <Link href="/settings/branding" className="text-sm hover:underline">
-              Branding
-            </Link>
-            <Link href="/settings/domains" className="text-sm hover:underline">
-              Domains
-            </Link>
-            <Link href="/settings/signup" className="text-sm hover:underline">
-              Signup settings
-            </Link>
+            <NavLink href="/settings/people">People</NavLink>
+            <NavLink href="/settings/branding">Branding</NavLink>
+            <NavLink href="/settings/domains">Domains</NavLink>
+            <NavLink href="/settings/signup">Signup</NavLink>
           </>
         ) : null}
 
-        {viewer ? (
-          <>
-            <Link href="/account" className="text-sm hover:underline">
-              Account
+        <div className="ml-auto flex items-center gap-3.5">
+          {viewer ? (
+            <>
+              {/* The address rather than a name: it is what tells somebody
+                  which of their two institutes they are signed in to. */}
+              <Link
+                href="/account"
+                className="text-muted-foreground text-(length:--text-label) hover:underline"
+              >
+                {viewer.email}
+              </Link>
+              <SignOutButton />
+            </>
+          ) : (
+            <Link
+              href="/sign-in"
+              className="bg-primary text-primary-foreground rounded-(--radius) px-3.5 py-2 text-(length:--text-ui) font-medium"
+            >
+              Sign in
             </Link>
-            <SignOutButton />
-          </>
-        ) : (
-          <Link
-            href="/sign-in"
-            className="bg-primary text-primary-foreground rounded-(--radius) px-3 py-1.5 text-sm"
-          >
-            Sign in
-          </Link>
-        )}
+          )}
+        </div>
       </nav>
     </header>
   );
@@ -140,8 +151,8 @@ export function SiteHeader({
 
 export function SiteFooter({ branding }: { branding: Branding }) {
   return (
-    <footer className="border-border text-muted-foreground mt-16 border-t">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-4 gap-y-1 px-6 py-6 text-sm">
+    <footer className="border-border text-muted-foreground mt-14 border-t">
+      <div className="mx-auto flex max-w-[1080px] flex-wrap items-center gap-x-4 gap-y-1 px-8 py-6 text-(length:--text-label)">
         <span>{branding.legalName ?? branding.copy.footer}</span>
         {branding.supportEmail ? (
           <a
