@@ -1,12 +1,20 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { Panel, Tag } from 'rsuite';
 import { getTenantDb } from '@/db/client';
-import { findCourseBySlug } from '@/db/repositories/catalog';
+import {
+  findCourseBySlug,
+  listCourseInstructors,
+  listCourseStats,
+  listProgramsForCourse,
+  listTagsForCourses,
+} from '@/db/repositories/catalog';
 import { listLessonsForCourse } from '@/db/repositories/lessons';
 import { can } from '@/lib/access/can';
 import { issueCourseDocuments } from '@/lib/access/media';
 import { decideLessonAccess } from '@/lib/access/predicate';
 import { getSessionUser, getViewer } from '@/lib/auth/guards';
+import { courseMeta, excerpt, money } from '@/lib/format';
 import { Markdown } from '@/lib/markdown/render';
 import { requireTenant } from '@/lib/tenancy/context';
 import { LessonList } from '../../lesson-list';
@@ -75,14 +83,20 @@ export default async function CoursePage({
         )
       : null;
 
-    return { course, lessons: rows, enrollVerdict };
+    return {
+      course,
+      lessons: rows,
+      enrollVerdict,
+      tags: await listTagsForCourses(scope, [course.id]),
+      instructors: await listCourseInstructors(scope, course.id),
+      programs: await listProgramsForCourse(scope, course.id),
+      stats: await listCourseStats(scope, [course.id]),
+    };
   });
 
   // A course that is not published, or belongs to another institute, is not
   // found. Same answer either way.
   if (!view) notFound();
-
-  const openCount = view.lessons.filter((lesson) => lesson.open).length;
 
   // A document is shown when it is public, or when this viewer has been let
   // into at least one gated lesson, which is the cheapest honest proxy for
@@ -108,63 +122,204 @@ export default async function CoursePage({
         ? ('already-enrolled' as const)
         : null;
 
+  const stat = view.stats[0];
+  const taughtBy = view.instructors
+    .map((person) => person.name ?? person.email)
+    .join(', ');
+  const meta = [
+    taughtBy ? `Taught by ${taughtBy}` : null,
+    courseMeta(stat?.lessonCount ?? 0, stat?.durationSeconds ?? null),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  // The blurb under the title and the notes further down come from the same
+  // field, so the notes only earn a section of their own when the blurb did
+  // not already say all of it. Otherwise a short description renders twice on
+  // the same screen.
+  const blurb = excerpt(view.course.descriptionMd, 240);
+  const fullText = excerpt(view.course.descriptionMd, Number.MAX_SAFE_INTEGER);
+  const hasLongerNotes = fullText.length > blurb.length;
+
+  const access = accessNoteFor({
+    enrolled,
+    isStandalonePurchasable: view.course.isStandalonePurchasable,
+    priceCents: view.course.priceCents,
+    currency: view.course.currency,
+    programTitle: view.programs[0]?.title ?? null,
+  });
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 p-8">
-      <header className="flex flex-col gap-2">
-        <Link
-          href="/catalogue"
-          className="text-muted-foreground text-sm underline-offset-4 hover:underline"
-        >
-          {tenant.name}
-        </Link>
-        <h1 className="text-3xl font-semibold tracking-tight">
-          {view.course.title}
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          {view.lessons.length} lessons, {openCount} open to you
-        </p>
-      </header>
+    <main className="mx-auto flex w-full max-w-[1080px] flex-col gap-10 px-8 pt-12 pb-24 lg:flex-row lg:items-start lg:gap-14">
+      <div className="flex min-w-0 flex-1 flex-col gap-8">
+        <header className="flex flex-col gap-3.5">
+          <Link
+            href="/catalogue"
+            className="text-muted-foreground w-fit text-(length:--text-label) underline-offset-4 hover:underline"
+          >
+            All courses
+          </Link>
 
-      {enrollState && (
-        <EnrollButton
-          slug={slug}
-          courseId={view.course.id}
-          state={enrollState}
-        />
-      )}
+          {view.tags.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {view.tags.map((tag) => (
+                <Tag key={tag.id} size="sm">
+                  {tag.label}
+                </Tag>
+              ))}
+            </div>
+          ) : null}
 
-      {view.course.descriptionMd && (
-        <section className="text-muted-foreground flex flex-col gap-3">
-          <Markdown source={view.course.descriptionMd} />
+          <h1 className="text-(length:--text-page) leading-[1.15] tracking-[-0.01em]">
+            {view.course.title}
+          </h1>
+
+          {blurb ? (
+            <p className="text-muted-foreground max-w-[62ch] text-(length:--text-body) leading-[1.6]">
+              {blurb}
+            </p>
+          ) : null}
+
+          <span className="text-muted-foreground text-(length:--text-label)">
+            {meta}
+          </span>
+        </header>
+
+        <section className="flex flex-col gap-3">
+          <span className="text-muted-foreground text-(length:--text-meta) font-semibold tracking-[0.14em] uppercase">
+            Lessons
+          </span>
+          <LessonList mode="student" lessons={view.lessons} />
         </section>
-      )}
 
-      {documents.length > 0 && (
-        <section className="flex flex-col gap-2">
-          <h2 className="text-sm font-medium">Course documents</h2>
-          <ul className="flex flex-col gap-1 text-sm">
-            {documents.map((doc) => (
-              <li key={doc.resourceId}>
-                <a
-                  href={doc.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline underline-offset-4"
-                >
-                  {doc.title}
-                </a>
-                {!doc.isPublic && (
-                  <span className="text-muted-foreground ml-2 text-xs">
-                    enrolled students only
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+        {view.course.descriptionMd && hasLongerNotes ? (
+          <section className="flex flex-col gap-3">
+            <span className="text-muted-foreground text-(length:--text-meta) font-semibold tracking-[0.14em] uppercase">
+              About this course
+            </span>
+            <div className="text-(length:--text-body) leading-[1.75]">
+              <Markdown source={view.course.descriptionMd} />
+            </div>
+          </section>
+        ) : null}
+      </div>
 
-      <LessonList mode="student" lessons={view.lessons} />
+      <aside className="w-full lg:sticky lg:top-[88px] lg:w-[320px] lg:shrink-0">
+        <Panel bordered className="bg-card">
+          <div className="flex flex-col gap-4">
+            <span className="font-serif text-[2rem] leading-none">
+              {access.priceLabel}
+            </span>
+            <p className="text-muted-foreground text-(length:--text-label) leading-[1.55]">
+              {access.note}
+            </p>
+
+            {enrollState && (
+              <EnrollButton
+                slug={slug}
+                courseId={view.course.id}
+                state={enrollState}
+              />
+            )}
+
+            {documents.length > 0 && (
+              <div className="border-border flex flex-col gap-2 border-t pt-4">
+                <span className="text-muted-foreground text-(length:--text-meta) font-semibold tracking-[0.14em] uppercase">
+                  Included
+                </span>
+                <ul className="flex flex-col gap-1.5">
+                  {documents.map((doc) => (
+                    <li
+                      key={doc.resourceId}
+                      className="text-(length:--text-label)"
+                    >
+                      <a
+                        href={doc.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline underline-offset-4"
+                      >
+                        {doc.title}
+                      </a>
+                      {!doc.isPublic && (
+                        <span className="text-muted-foreground ml-2 text-[0.71875rem]">
+                          enrolled students only
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {view.programs.length > 0 && (
+              <div className="border-border flex flex-col gap-2 border-t pt-4">
+                <span className="text-muted-foreground text-(length:--text-meta) font-semibold tracking-[0.14em] uppercase">
+                  Part of
+                </span>
+                {view.programs.map((program) => (
+                  <div key={program.id} className="flex flex-col gap-0.5">
+                    <span className="text-(length:--text-ui) font-medium">
+                      {program.title}
+                    </span>
+                    <span className="text-muted-foreground text-(length:--text-label)">
+                      {money(program.priceCents)} for the whole program
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </Panel>
+      </aside>
     </main>
   );
+}
+
+/**
+ * What the sidebar says about the price of this course.
+ *
+ * Reads from the same facts the catalogue's state tag uses, in the same order,
+ * so the two surfaces cannot disagree about whether somebody is enrolled.
+ *
+ * Enrolling ignores price (round 2 decision, see catalogue/actions.ts), so
+ * these read as what the course is worth rather than as a paywall.
+ */
+function accessNoteFor({
+  enrolled,
+  isStandalonePurchasable,
+  priceCents,
+  currency,
+  programTitle,
+}: {
+  enrolled: boolean;
+  isStandalonePurchasable: boolean;
+  priceCents: number;
+  currency: string;
+  programTitle: string | null;
+}): { priceLabel: string; note: string } {
+  if (enrolled) {
+    return {
+      priceLabel: 'Included',
+      note: 'You are enrolled. Every lesson below is open to you.',
+    };
+  }
+  if (priceCents === 0) {
+    return {
+      priceLabel: 'Free',
+      note: 'Free to everyone at this institute.',
+    };
+  }
+  if (!isStandalonePurchasable) {
+    return {
+      priceLabel: programTitle ? 'In the program' : 'Not offered separately',
+      note: programTitle
+        ? `Part of ${programTitle} rather than a course on its own.`
+        : 'Part of a program rather than a course on its own.',
+    };
+  }
+  return {
+    priceLabel: money(priceCents, currency),
+    note: 'One enrolment, kept for good.',
+  };
 }

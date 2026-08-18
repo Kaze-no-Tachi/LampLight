@@ -21,6 +21,8 @@ export const TENANT_OWNED_TABLES = [
   'audit_log',
   'course_instructors',
   'course_resources',
+  'course_tag_links',
+  'course_tags',
   'courses',
   'enrollments',
   'lesson_resources',

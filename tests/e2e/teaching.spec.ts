@@ -1,6 +1,12 @@
 import type { Page } from '@playwright/test';
 import { expect, test } from '../helpers/test';
-import { GRACE_HOST, PEOPLE, signIn, url } from '../helpers/browser';
+import {
+  GRACE_HOST,
+  openCourseSettings,
+  PEOPLE,
+  signIn,
+  url,
+} from '../helpers/browser';
 
 /**
  * What an instructor changes, and what a student then sees.
@@ -69,23 +75,21 @@ const PDF = Buffer.from(
  * actually is rather than assume.
  */
 async function openCourseEditor(page: Page): Promise<string> {
-  await page.goto(url(GRACE_HOST, '/teach'));
-
   // A named course, not the first one on the page. These tests need a course
   // that has lessons in it, and "first" is whatever sorts earliest by title,
   // which changed the moment another spec started creating courses of its own.
   // Reading where it actually is beats assuming, and naming it beats both.
-  await page
-    .locator('section', { hasText: COURSE_WITH_LESSONS })
-    .first()
-    .getByRole('link', { name: /^Manage lessons$/ })
-    .click();
-  await page.waitForURL('**/courses/**/edit');
+  await openCourseSettings(page, COURSE_WITH_LESSONS);
 
   const href = await page
     .getByRole('link', { name: /see what students see/i })
     .getAttribute('href');
   return href ?? '/catalogue';
+}
+
+/** The lesson editor's own recording block, which is one card among several. */
+function recordingBlock(page: Page) {
+  return page.locator('section', { hasText: 'Recording' }).first();
 }
 
 test.describe('an instructor changing a course', () => {
@@ -94,11 +98,26 @@ test.describe('an instructor changing a course', () => {
     const coursePath = await openCourseEditor(page);
 
     const marker = `Covering the historical books ${Date.now()}`;
+
+    // LONG ENOUGH TO REACH THE NOTES BLOCK. The reskinned course page shows a
+    // plain-text excerpt under the title and only renders the markdown further
+    // down when the description says more than that excerpt already did. A
+    // short description therefore renders as text, and this test's claim about
+    // elements would be asserted against the wrong half of the screen.
+    const filler =
+      'The historical books run from Joshua to Esther and carry the story ' +
+      'of the monarchy, the exile and the return. This course reads them ' +
+      'as one narrative rather than as a shelf of separate documents, and ' +
+      'sets each book beside the prophets who spoke into the same years.';
     await page
-      .locator('#course-description')
-      .fill(`## About\n\n${marker}\n\n- One\n- Two`);
+      .locator('textarea[aria-label="Catalogue description"]')
+      .fill(`## About\n\n${marker}\n\n${filler}\n\n- One\n- Two`);
+
+    // The form says what it has done in words beside the button rather than in
+    // a toast, which the design is explicit about (mockups 6 and 9).
+    await expect(page.getByText('Unsaved changes')).toBeVisible();
     await page.getByRole('button', { name: /save course/i }).click();
-    await expect(page.getByText('Saved.')).toBeVisible();
+    await expect(page.getByText('Saved just now')).toBeVisible();
 
     // A different person entirely, not a reload of the editor.
     const studentPage = await context.newPage();
@@ -115,11 +134,14 @@ test.describe('an instructor changing a course', () => {
     await signIn(page, PEOPLE.instructor);
     await openCourseEditor(page);
 
+    // Linking is disclosed rather than shown: uploading is the answer that
+    // keeps working, so the link fields are one click in.
+    await page.getByRole('button', { name: /^Add a link$/ }).click();
     await page.locator('input[placeholder="Reading list"]').fill('Bad');
     await page
       .locator('input[placeholder="https://example.edu/reading-list.pdf"]')
       .fill('javascript:alert(1)');
-    await page.getByRole('button', { name: /add link/i }).click();
+    await page.getByRole('button', { name: /^Add link$/ }).click();
 
     await expect(page.locator('p.text-destructive')).toContainText(
       /must start with https/i,
@@ -136,13 +158,18 @@ test.describe('an instructor changing a course', () => {
     await signIn(page, PEOPLE.instructor);
     const coursePath = await openCourseEditor(page);
 
-    const name = `Syllabus ${Date.now()}`;
-    await page.locator('input[placeholder="Reading list"]').fill(name);
-    await page.locator('input[type=file]').first().setInputFiles({
-      name: 'syllabus.pdf',
-      mimeType: 'application/pdf',
-      buffer: PDF,
-    });
+    // Named by the file rather than by a box beside it. An upload already has
+    // a name, and the reskin stopped asking for it twice (mockup 6), so the
+    // filename is what has to be unique per run.
+    const name = `syllabus-${Date.now()}.pdf`;
+    await page
+      .locator('input[type=file][accept*="pdf"]')
+      .first()
+      .setInputFiles({
+        name,
+        mimeType: 'application/pdf',
+        buffer: PDF,
+      });
 
     // The confirm step asks the bucket, so the row only appears once the
     // object is really there.
@@ -181,26 +208,29 @@ test.describe('an instructor changing a course', () => {
       .click();
     await page.waitForURL('**/teach/lessons/**');
 
-    const recordings = page
-      .locator('section', { hasText: 'Recording' })
-      .first();
-    await recordings.locator('input[type=file]').setInputFiles({
-      name: 'replacement.wav',
-      mimeType: 'audio/wav',
-      buffer: wav(),
-    });
+    const recording = recordingBlock(page);
+    await recording
+      .locator('input[type=file][accept="audio/*"]')
+      .setInputFiles({
+        name: 'replacement.wav',
+        mimeType: 'audio/wav',
+        buffer: wav(),
+      });
 
-    await expect(recordings.getByText('replacement.wav')).toBeVisible({
+    await expect(recording.getByText('replacement.wav')).toBeVisible({
       timeout: 20_000,
     });
 
+    // THE ASSERTION THAT CATCHES THE APPEND. The editor shows one recording,
+    // so a second row would not be visible as a row: it would be invisible
+    // entirely, and the lesson would keep playing the old lecture. Counting
+    // the filename occurrences on a reloaded page is what makes the append
+    // detectable rather than hidden by a block that only draws the first.
     await page.reload();
-    const rows = page
-      .locator('section', { hasText: 'Recording' })
-      .first()
-      .locator('li li');
-    await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText('replacement.wav');
+    await expect(recordingBlock(page).getByText('replacement.wav')).toHaveCount(
+      1,
+    );
+    await expect(page.getByText(/lesson-4/)).toHaveCount(0);
   });
 
   test('refuses a file that is not audio', async ({ page }) => {
@@ -212,14 +242,13 @@ test.describe('an instructor changing a course', () => {
       .click();
     await page.waitForURL('**/teach/lessons/**');
 
-    const recordings = page
-      .locator('section', { hasText: 'Recording' })
-      .first();
-    await recordings.locator('input[type=file]').setInputFiles({
-      name: 'notes.html',
-      mimeType: 'text/html',
-      buffer: Buffer.from('<h1>not audio</h1>'),
-    });
+    await recordingBlock(page)
+      .locator('input[type=file][accept="audio/*"]')
+      .setInputFiles({
+        name: 'notes.html',
+        mimeType: 'text/html',
+        buffer: Buffer.from('<h1>not audio</h1>'),
+      });
 
     // By text rather than by class: the lesson editor renders errors in a span
     // and the Remove buttons carry the same destructive class, so a class
@@ -263,30 +292,45 @@ test.describe('who may teach', () => {
 });
 
 test.describe('the teaching summary', () => {
-  test('shows what is coming, with nothing that leads to a 404', async ({
-    page,
-  }) => {
-    // Round 2, chunk 4: /teach stopped being the workspace and became a
-    // summary, with Grading, Assessments and Roster shown honestly as not
-    // built rather than left off or wired to a page that does not exist.
+  test('is a list, and its one link goes somewhere', async ({ page }) => {
+    // Round 2, chunk 4 made /teach a summary rather than the workspace. The
+    // reskin (mockup 5) took the rest of the way: the publish button, the
+    // instructor roster and three "coming soon" panels per card left, because
+    // three write actions on every row of a list is a second editor.
     await signIn(page, PEOPLE.instructor);
     await page.goto(url(GRACE_HOST, '/teach'));
 
     const card = page
-      .locator('section', { hasText: COURSE_WITH_LESSONS })
+      .locator('[data-testid="course-card"]', { hasText: COURSE_WITH_LESSONS })
       .first();
 
+    // The shape a list row has: what it is, what state it is in, one way in.
+    await expect(card).toContainText(/lessons/);
     for (const label of ['Grading', 'Assessments', 'Roster']) {
-      const panel = card.locator('div', { hasText: label }).last();
+      await expect(card).not.toContainText(label);
+    }
+
+    await card.getByRole('link', { name: /^Course settings$/ }).click();
+    await page.waitForURL('**/teach/courses/*');
+    await expect(
+      page.getByRole('heading', { name: /^Course settings$/ }),
+    ).toBeVisible();
+  });
+
+  test('admits what is not built, once, on the course itself', async ({
+    page,
+  }) => {
+    // Still admitted to rather than left off, because a screen that never
+    // mentions grading reads as though nothing else is planned, and a link
+    // that would 404 is worse than a label that says so. Said once here
+    // instead of six times down the teaching list.
+    await signIn(page, PEOPLE.instructor);
+    await openCourseSettings(page, COURSE_WITH_LESSONS);
+
+    for (const label of ['Grading', 'Assessments', 'Roster']) {
+      const panel = page.locator('div', { hasText: label }).last();
       await expect(panel).toContainText(/coming soon/i);
       await expect(panel.getByRole('link')).toHaveCount(0);
     }
-
-    // The one link this card offers actually goes somewhere, not to a 404.
-    await card.getByRole('link', { name: /^Manage lessons$/ }).click();
-    await page.waitForURL('**/courses/**/edit');
-    await expect(
-      page.getByRole('heading', { name: COURSE_WITH_LESSONS }),
-    ).toBeVisible();
   });
 });

@@ -60,6 +60,12 @@ export type SeedModule = {
   lessons: SeedLesson[];
 };
 
+export type SeedTag = {
+  id: string;
+  slug: string;
+  label: string;
+};
+
 export type SeedCourse = {
   id: string;
   productId: string;
@@ -71,6 +77,8 @@ export type SeedCourse = {
   isPublished: boolean;
   priceCents: number;
   modules: SeedModule[];
+  /** Slugs into the tenant's own tag vocabulary. */
+  tagSlugs: string[];
 };
 
 export type SeedProgram = {
@@ -124,6 +132,12 @@ export type SeedTenant = {
   users: Record<string, SeedUser>;
   programs: SeedProgram[];
   courses: SeedCourse[];
+  /**
+   * The institute's subject vocabulary. Both fixtures use the same slugs, for
+   * the same reason every other identifier collides: a tag lookup that loses
+   * its tenant filter has to return something that looks right.
+   */
+  tags: SeedTag[];
   /** Course slugs the tenant's instructor is assigned to. */
   instructorCourseSlugs: string[];
   enrollments: SeedEnrollment[];
@@ -134,36 +148,42 @@ const COURSE_TEMPLATE: {
   title: string;
   isStandalonePurchasable: boolean;
   isPublished: boolean;
+  tagSlugs: string[];
 }[] = [
   {
     slug: 'old-testament-survey',
     title: 'Old Testament Survey',
     isStandalonePurchasable: true,
     isPublished: true,
+    tagSlugs: ['old-testament', 'survey'],
   },
   {
     slug: 'new-testament-survey',
     title: 'New Testament Survey',
     isStandalonePurchasable: true,
     isPublished: true,
+    tagSlugs: ['new-testament', 'survey'],
   },
   {
     slug: 'systematic-theology-i',
     title: 'Systematic Theology I',
     isStandalonePurchasable: true,
     isPublished: true,
+    tagSlugs: ['theology'],
   },
   {
     slug: 'church-history',
     title: 'Church History',
     isStandalonePurchasable: true,
     isPublished: true,
+    tagSlugs: ['history'],
   },
   {
     slug: 'hermeneutics',
     title: 'Hermeneutics',
     isStandalonePurchasable: true,
     isPublished: true,
+    tagSlugs: ['interpretation'],
   },
   {
     // Sold only inside the certificate program, and left unpublished so the
@@ -172,6 +192,7 @@ const COURSE_TEMPLATE: {
     title: 'Pastoral Ministry',
     isStandalonePurchasable: false,
     isPublished: false,
+    tagSlugs: ['ministry', 'theology'],
   },
 ];
 
@@ -195,6 +216,31 @@ const PROGRAM_TEMPLATE: {
     courseSlugs: ['church-history', 'hermeneutics', 'pastoral-ministry'],
   },
 ];
+
+/**
+ * The tag vocabulary each institute starts with.
+ *
+ * Seeded per tenant rather than shared, because the whole point of the table
+ * is that the vocabulary belongs to the institute: one can rename
+ * "Interpretation" to "Hermeneutics" without touching the other.
+ */
+const TAG_TEMPLATE: { slug: string; label: string }[] = [
+  { slug: 'old-testament', label: 'Old Testament' },
+  { slug: 'new-testament', label: 'New Testament' },
+  { slug: 'theology', label: 'Theology' },
+  { slug: 'history', label: 'History' },
+  { slug: 'interpretation', label: 'Interpretation' },
+  { slug: 'survey', label: 'Survey' },
+  { slug: 'ministry', label: 'Ministry' },
+];
+
+function buildTags(tenantSlug: string): SeedTag[] {
+  return TAG_TEMPLATE.map((tag) => ({
+    id: seedUuid(`${tenantSlug}/tag/${tag.slug}`),
+    slug: tag.slug,
+    label: tag.label,
+  }));
+}
 
 const MODULES_PER_COURSE = 2;
 const LESSONS_PER_MODULE = 2;
@@ -247,6 +293,7 @@ function buildCourses(tenantSlug: string): SeedCourse[] {
       isPublished: course.isPublished,
       priceCents: 29900,
       modules,
+      tagSlugs: course.tagSlugs,
     };
   });
 }
@@ -400,6 +447,7 @@ function buildTenant(
     users: buildUsers(slug, emailDomain),
     programs: buildPrograms(slug),
     courses: buildCourses(slug),
+    tags: buildTags(slug),
     // Assigned to the first three courses only, so "blocked from editing
     // courses I am not assigned to" has a negative case to test against.
     instructorCourseSlugs: [
@@ -471,6 +519,14 @@ export function courseBySlug(tenant: SeedTenant, slug: string): SeedCourse {
     throw new Error(`seed fixture has no course "${slug}" in ${tenant.slug}`);
   }
   return course;
+}
+
+export function tagBySlug(tenant: SeedTenant, slug: string): SeedTag {
+  const tag = tenant.tags.find((candidate) => candidate.slug === slug);
+  if (!tag) {
+    throw new Error(`seed fixture has no tag "${slug}" in ${tenant.slug}`);
+  }
+  return tag;
 }
 
 export function programBySlug(tenant: SeedTenant, slug: string): SeedProgram {

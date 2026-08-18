@@ -16,7 +16,12 @@
 export const COPY_KEYS = ['tagline', 'hero', 'about', 'footer'] as const;
 export type CopyKey = (typeof COPY_KEYS)[number];
 
-const LIMITS: Record<CopyKey, number> = {
+/**
+ * Exported because the branding form counts against them out loud. An admin
+ * pasting a paragraph into a tagline should be able to see that it will be
+ * trimmed before they save, rather than after.
+ */
+export const COPY_LIMITS: Record<CopyKey, number> = {
   tagline: 120,
   hero: 240,
   about: 800,
@@ -52,7 +57,10 @@ export function parseCopy(input: unknown): CopySettings {
     if (typeof value !== 'string') continue;
     // Collapses runs of whitespace, since these are single-line-ish fields and
     // a pasted newline otherwise leaves a gap the admin cannot see in the form.
-    const cleaned = value.replace(/\s+/g, ' ').trim().slice(0, LIMITS[key]);
+    const cleaned = value
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, COPY_LIMITS[key]);
     if (cleaned) copy[key] = cleaned;
   }
 

@@ -192,6 +192,7 @@ export type AuthoringResource = LessonResource & {
   lessonId: string;
   /** Null while an upload is reserved but unconfirmed. */
   byteSize: number | null;
+  createdAt: Date;
 };
 
 /**
@@ -216,6 +217,9 @@ export async function listResourcesForLessons(
       filename: lessonResources.filename,
       isDownloadable: lessonResources.isDownloadable,
       byteSize: lessonResources.byteSize,
+      // Read by the lesson editor, which says when the recording arrived so
+      // that somebody who has just replaced one can tell it actually changed.
+      createdAt: lessonResources.createdAt,
     })
     .from(lessonResources)
     .where(

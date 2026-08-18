@@ -15,11 +15,13 @@ import {
   firstGatedLesson,
   GRACE,
 } from '@/db/seed-data';
+import { withScope } from '../helpers/scope';
 import {
   archiveCourse,
   archiveLesson,
   createCourse,
   reorderLesson,
+  resolveModule,
   setCoursePublished,
   setLessonPublished,
 } from '@/lib/catalog/authoring';
@@ -278,3 +280,90 @@ async function addLesson(courseId: string, sortOrder = 0): Promise<string> {
     return lesson.id;
   });
 }
+
+describe('choosing which section a lesson goes into', () => {
+  it('creates the section when one is named', async () => {
+    const courseId = await makeCourse(`resolve-new-section-${Date.now()}`);
+
+    const moduleId = await getTenantDb(GRACE.id).run((scope) =>
+      resolveModule(scope, courseId, {
+        askedModuleId: '',
+        newModule: 'Second Half',
+      }),
+    );
+
+    const named = await getAdminDb()
+      .select({ title: modules.title, courseId: modules.courseId })
+      .from(modules)
+      .where(eq(modules.id, moduleId ?? ''));
+
+    expect(named[0]?.title).toBe('Second Half');
+    expect(named[0]?.courseId).toBe(courseId);
+  });
+
+  it('falls back to the section a course already came with', async () => {
+    const courseId = await makeCourse(`resolve-default-${Date.now()}`);
+
+    const moduleId = await getTenantDb(GRACE.id).run((scope) =>
+      resolveModule(scope, courseId, { askedModuleId: '', newModule: '' }),
+    );
+
+    const rows = await getAdminDb()
+      .select({ id: modules.id })
+      .from(modules)
+      .where(eq(modules.courseId, courseId));
+
+    // The one createCourse makes and nobody is ever shown, not a second one.
+    expect(rows).toHaveLength(1);
+    expect(moduleId).toBe(rows[0]?.id);
+  });
+
+  it('refuses a section belonging to a different course', async () => {
+    // THE ONE THAT MATTERS. The add-a-lesson screen only ever offers this
+    // course's own sections, so a moduleId from anywhere else arrived by
+    // somebody editing the payload. Filing the lesson into the first section
+    // instead would put it in front of another course's students, quietly.
+    const mine = await makeCourse(`resolve-guard-mine-${Date.now()}`);
+    const other = await makeCourse(`resolve-guard-other-${Date.now()}`);
+
+    const [theirs] = await getAdminDb()
+      .select({ id: modules.id })
+      .from(modules)
+      .where(eq(modules.courseId, other));
+
+    const moduleId = await getTenantDb(GRACE.id).run((scope) =>
+      resolveModule(scope, mine, {
+        askedModuleId: theirs?.id ?? '',
+        newModule: '',
+      }),
+    );
+
+    expect(moduleId).toBeNull();
+  });
+
+  it('refuses a section belonging to another institute', async () => {
+    const mine = await makeCourse(`resolve-foreign-${Date.now()}`);
+    const foreign = courseBySlug(CORNERSTONE, 'church-history').id;
+
+    const [theirs] = await getAdminDb()
+      .select({ id: modules.id })
+      .from(modules)
+      .where(eq(modules.courseId, foreign));
+
+    // App-layer-only, so this is the application filter answering rather than
+    // RLS. Be clear about which filter: deleting scope.tenantId from that
+    // query leaves this green, because the course filter above already refuses
+    // any section that is not this course's, and another institute's sections
+    // never are. The tenant filter stays anyway, as the redundant second layer
+    // every repository query in this codebase carries, and this case asserts
+    // the outcome rather than claiming to be what enforces it.
+    const moduleId = await withScope('app-layer-only', GRACE.id, (scope) =>
+      resolveModule(scope, mine, {
+        askedModuleId: theirs?.id ?? '',
+        newModule: '',
+      }),
+    );
+
+    expect(moduleId).toBeNull();
+  });
+});

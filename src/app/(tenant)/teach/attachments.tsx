@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, useTransition } from 'react';
+import { Checkbox, Input } from 'rsuite';
 import {
   checkUpload,
   formatBytes,
@@ -59,6 +60,7 @@ export function Attachments({
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [linking, setLinking] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   /** Both actions want the parent named the same way the server reads it. */
@@ -149,22 +151,39 @@ export function Attachments({
     });
   }
 
+  const busy = pending || phase !== 'idle';
+
   return (
-    <section className="flex flex-col gap-3">
+    <section className="border-border bg-card flex flex-col gap-3.5 rounded-(--radius) border px-6 py-[22px]">
       <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-medium">{title}</h2>
-        <p className="text-muted-foreground text-sm">{description}</p>
+        <h2 className="text-(length:--text-row-title) leading-tight">
+          {title}
+        </h2>
+        <p className="text-muted-foreground max-w-[70ch] text-(length:--text-label) leading-[1.55]">
+          {description}
+        </p>
       </div>
 
-      {attachments.length > 0 && (
-        <ul className="flex flex-col text-sm">
+      {attachments.length === 0 ? (
+        <p className="text-muted-foreground text-(length:--text-label)">
+          Nothing yet. Upload a file or add a link.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
           {attachments.map((attachment) => (
             <li
               key={attachment.id}
-              className="flex items-center gap-3 border-b py-2"
+              className="border-border flex flex-wrap items-center gap-3.5 rounded-(--radius) border px-3.5 py-[11px]"
             >
-              <span className="truncate">{attachment.label}</span>
-              <span className="text-muted-foreground text-xs">
+              {/* The kind first and in caps, as the mockup has it: a list of
+                  handouts is scanned for "which of these is the PDF". */}
+              <span className="text-muted-foreground min-w-[34px] text-[0.6875rem] font-medium tracking-[0.1em] uppercase">
+                {attachment.kind}
+              </span>
+              <span className="min-w-40 flex-1 truncate text-(length:--text-ui)">
+                {attachment.label}
+              </span>
+              <span className="text-muted-foreground text-(length:--text-meta) whitespace-nowrap">
                 {attachment.kind === 'link'
                   ? 'Link'
                   : attachment.byteSize === null
@@ -178,9 +197,9 @@ export function Attachments({
               </span>
               <button
                 type="button"
-                disabled={pending || phase !== 'idle'}
+                disabled={busy}
                 onClick={() => remove(attachment.id)}
-                className="text-destructive ml-auto text-xs underline disabled:opacity-60"
+                className="text-muted-foreground cursor-pointer text-(length:--text-label) font-medium underline-offset-4 hover:underline disabled:opacity-60"
               >
                 Remove
               </button>
@@ -189,34 +208,13 @@ export function Attachments({
         </ul>
       )}
 
-      <div className="flex flex-col gap-3 rounded-lg border p-4">
-        <label className="flex flex-col gap-1 text-sm">
-          Name
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Reading list"
-            className="rounded-md border px-3 py-2"
-          />
-        </label>
-
-        {showVisibility && (
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={isPublic}
-              onChange={(event) => setIsPublic(event.target.checked)}
-            />
-            Open to everyone, including people who have not enrolled
-          </label>
-        )}
-
-        <label className="bg-primary text-primary-foreground w-fit cursor-pointer rounded-md px-4 py-2 text-sm">
+      <div className="flex flex-wrap items-center gap-3.5">
+        <label className="text-primary cursor-pointer text-(length:--text-label) font-medium underline-offset-4 hover:underline">
           {phase === 'sending'
             ? `Sending ${progress}%`
             : phase === 'checking'
-              ? 'Checking it arrived...'
-              : 'Upload a PDF'}
+              ? 'Checking it arrived'
+              : 'Upload a file'}
           <input
             ref={fileRef}
             type="file"
@@ -230,28 +228,81 @@ export function Attachments({
           />
         </label>
 
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex min-w-64 flex-1 flex-col gap-1 text-sm">
-            Or link to something that lives elsewhere
-            <input
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              placeholder="https://example.edu/reading-list.pdf"
-              className="rounded-md border px-3 py-2"
-            />
-          </label>
-          <button
-            type="button"
-            disabled={pending || !url || !name}
-            onClick={link}
-            className="rounded-md border px-3 py-2 text-sm disabled:opacity-60"
-          >
-            Add link
-          </button>
-        </div>
+        {/* Linking is disclosed rather than shown, because uploading is the
+            answer that keeps working: a link is somebody else's uptime and
+            somebody else's decision about whether the file exists next year. */}
+        <button
+          type="button"
+          onClick={() => setLinking((current) => !current)}
+          className="text-muted-foreground cursor-pointer text-(length:--text-label) font-medium underline-offset-4 hover:underline"
+        >
+          {linking ? 'Never mind the link' : 'Add a link'}
+        </button>
 
-        {error && <p className="text-destructive text-sm">{error}</p>}
+        <span className="text-muted-foreground text-(length:--text-meta)">
+          PDF or plain text, up to 25 MB.
+        </span>
       </div>
+
+      {linking && (
+        <div className="border-border flex flex-col gap-2.5 rounded-(--radius) border border-dashed px-3.5 py-3">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="min-w-40 flex-1">
+              <Input
+                value={name}
+                onChange={(next: string) => setName(next)}
+                placeholder="Reading list"
+                aria-label="What the link is called"
+              />
+            </div>
+            <div className="min-w-60 flex-[2]">
+              <Input
+                value={url}
+                onChange={(next: string) => setUrl(next)}
+                placeholder="https://example.edu/reading-list.pdf"
+                aria-label="Web address"
+              />
+            </div>
+            <button
+              type="button"
+              disabled={pending || !url || !name}
+              onClick={link}
+              className="border-border hover:border-primary cursor-pointer rounded-(--radius) border px-[13px] py-[9px] text-(length:--text-label) font-medium disabled:opacity-60"
+            >
+              Add link
+            </button>
+          </div>
+
+          {showVisibility && (
+            <Checkbox
+              checked={isPublic}
+              onChange={(_value, checked: boolean) => setIsPublic(checked)}
+            >
+              <span className="text-(length:--text-label)">
+                Open to everyone, including people who have not enrolled
+              </span>
+            </Checkbox>
+          )}
+        </div>
+      )}
+
+      {/* The name field is only asked for with a link. An upload already has
+          one, and asking for it twice is how a handout ends up called
+          "Untitled" because somebody skipped the box above the button. */}
+      {showVisibility && !linking && (
+        <Checkbox
+          checked={isPublic}
+          onChange={(_value, checked: boolean) => setIsPublic(checked)}
+        >
+          <span className="text-(length:--text-label)">
+            Uploads are open to everyone, including people who have not enrolled
+          </span>
+        </Checkbox>
+      )}
+
+      {error && (
+        <p className="text-destructive text-(length:--text-label)">{error}</p>
+      )}
     </section>
   );
 }

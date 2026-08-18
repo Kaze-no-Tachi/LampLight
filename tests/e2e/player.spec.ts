@@ -47,7 +47,7 @@ test.describe('playing a lecture', () => {
     await signIn(page, PEOPLE.student);
     await openFirstLesson(page);
 
-    await page.getByRole('button', { name: /play this lecture/i }).click();
+    await page.getByRole('button', { name: /^(Play|Resume)$/ }).click();
     await expect
       .poll(async () => (await audioState(page))?.paused, {
         message: 'the lecture should be playing',
@@ -57,7 +57,10 @@ test.describe('playing a lecture', () => {
 
     const before = await audioState(page);
 
-    await page.getByRole('link', { name: 'Courses', exact: true }).click();
+    // "My study" is the shelf. The header's "Courses" is the public catalogue,
+    // which is a different screen and was what this clicked into after the
+    // reskin renamed both.
+    await page.getByRole('link', { name: 'My study', exact: true }).click();
     await page.waitForURL('**/courses');
 
     await expect
@@ -76,7 +79,7 @@ test.describe('playing a lecture', () => {
     await signIn(page, PEOPLE.student);
     const lessonId = await openFirstLesson(page);
 
-    await page.getByRole('button', { name: /play this lecture/i }).click();
+    await page.getByRole('button', { name: /^(Play|Resume)$/ }).click();
     await expect
       .poll(async () => (await audioState(page))?.paused, { timeout: 10_000 })
       .toBe(false);
@@ -130,7 +133,7 @@ test.describe('playing a lecture', () => {
 
     // A completely fresh page, the way somebody comes back the next morning.
     await page.goto(url(GRACE_HOST, `/lessons/${lessonId}`));
-    await page.getByRole('button', { name: /play this lecture/i }).click();
+    await page.getByRole('button', { name: /^(Play|Resume)$/ }).click();
 
     await expect
       .poll(async () => (await audioState(page))?.position ?? 0, {
@@ -144,7 +147,7 @@ test.describe('playing a lecture', () => {
     await signIn(page, PEOPLE.student);
     await openFirstLesson(page);
 
-    await page.getByRole('button', { name: /play this lecture/i }).click();
+    await page.getByRole('button', { name: /^(Play|Resume)$/ }).click();
     await expect
       .poll(async () => (await audioState(page))?.paused, { timeout: 10_000 })
       .toBe(false);
@@ -168,7 +171,7 @@ test.describe('playing a lecture', () => {
       .getAttribute('href');
     await page.goto(url(GRACE_HOST, href ?? '/'));
 
-    await page.getByRole('button', { name: /play this lecture/i }).click();
+    await page.getByRole('button', { name: /^(Play|Resume)$/ }).click();
     await expect
       .poll(async () => (await audioState(page))?.paused, { timeout: 10_000 })
       .toBe(false);

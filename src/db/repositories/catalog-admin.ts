@@ -1,9 +1,12 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, countDistinct, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   courseInstructors,
   courses,
   enrollments,
+  lessonResources,
+  lessons,
   memberships,
+  modules,
   products,
   programCourses,
   programs,
@@ -187,4 +190,84 @@ export async function countCourseEnrollments(
     );
 
   return Number(row?.count ?? 0);
+}
+
+export type CourseShape = {
+  courseId: string;
+  moduleCount: number;
+  lessonCount: number;
+  /**
+   * Published, unarchived lessons with no audio attached. The number the
+   * teaching list leads with, because it is the only thing on that screen that
+   * is somebody's outstanding job.
+   */
+  awaitingAudio: number;
+};
+
+/**
+ * The shape of each course: how many sections, how many lessons, and how many
+ * of those are still waiting on a recording.
+ *
+ * Counts rather than the lessons themselves, deliberately. Modules and lessons
+ * were moved off the teaching list into the course editor (round 2, chunk 3),
+ * and reversing that would put a second editor on a screen that is meant to be
+ * a list. A count still answers the question the list exists to answer, which
+ * is which course needs attention next.
+ *
+ * Unpublished and archived lessons are excluded from the audio gap: a draft
+ * nobody can hear yet is not waiting on anything, and chasing a recording for
+ * a retired lesson is work nobody wants.
+ */
+export async function listCourseShapes(
+  scope: TenantScope,
+  courseIds: string[],
+): Promise<CourseShape[]> {
+  if (courseIds.length === 0) return [];
+
+  const rows = await scope.tx
+    .select({
+      courseId: modules.courseId,
+      moduleCount: countDistinct(modules.id),
+      lessonCount: countDistinct(lessons.id),
+      // Distinct over lesson ids so a lesson carrying two handouts and no
+      // recording is counted once rather than twice.
+      awaitingAudio: countDistinct(
+        sql`case when ${lessonResources.id} is null then ${lessons.id} end`,
+      ),
+    })
+    .from(modules)
+    // Left throughout: a course with no sections, and a section with no
+    // lessons, both belong on the teaching list. That is precisely the state
+    // somebody opened the screen to fix.
+    .leftJoin(
+      lessons,
+      and(
+        eq(lessons.tenantId, scope.tenantId),
+        eq(lessons.moduleId, modules.id),
+        isNull(lessons.archivedAt),
+        eq(lessons.isPublished, true),
+      ),
+    )
+    .leftJoin(
+      lessonResources,
+      and(
+        eq(lessonResources.tenantId, scope.tenantId),
+        eq(lessonResources.lessonId, lessons.id),
+        eq(lessonResources.kind, 'audio'),
+      ),
+    )
+    .where(
+      and(
+        eq(modules.tenantId, scope.tenantId),
+        inArray(modules.courseId, courseIds),
+      ),
+    )
+    .groupBy(modules.courseId);
+
+  return rows.map((row) => ({
+    courseId: row.courseId,
+    moduleCount: Number(row.moduleCount),
+    lessonCount: Number(row.lessonCount),
+    awaitingAudio: Number(row.awaitingAudio),
+  }));
 }

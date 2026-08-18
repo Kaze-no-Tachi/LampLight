@@ -71,16 +71,24 @@ waits for `migrate` to exit successfully. The box exposes nothing but SSH, and
   including chunk 5's cleanup (`settings/catalog` and
   `teach/courses/[courseId]` deleted, catalogue administration folded into
   `/teach`).
-- Adding a second section to a course has no UI right now. `/teach` used to
-  have an inline "Add module" form; retiring that page in chunk 4 removed it
-  along with everything else /teach no longer renders, and the replacement
-  editor (`/courses/[courseId]/edit`, chunk 3) never had one. The server
-  action, `addModuleAction` in `src/app/(tenant)/teach/actions.ts`, still
-  works and has no caller. Whoever adds this back needs to design around
-  `tests/e2e/catalog.spec.ts`'s "never mentions sections" test: the editor is
-  deliberately silent about sections for the common one-section course, so
-  the control needs progressive disclosure, not a form that is just always
-  there.
+- The visual reskin is done, seven screens of it, on
+  `reskin/student-surfaces` and not yet merged. Catalogue, course detail,
+  student shelf, lesson player and mini player came first; then the staff
+  sidebar shell, the teaching list, and the four authoring screens (new
+  course, add a lesson, course settings, lesson editor); then people,
+  branding and the superadmin console. The design handoff is
+  `UI mockup request.zip`, whose README describes the app as unbuilt and
+  claims shadcn/ui: both are wrong, and it predates round 2, so it conflicts
+  with the real structure in several places. Each conflict is argued in the
+  commit that resolved it rather than silently reversed.
+- Adding a second section to a course has UI again, on the add-a-lesson page
+  (`/teach/courses/[courseId]/lessons/new`), behind a "Put it in a new
+  section" link that only becomes a picker once a course has more than one.
+  `addModuleAction` still exists and is still uncalled: the page goes through
+  `resolveModule` in `src/lib/catalog/authoring.ts`, which also refuses a
+  section belonging to another course. Retire the action or point something at
+  it. The one-section silence round 2 decided on is intact and
+  `tests/e2e/catalog.spec.ts` asserts it on both screens.
 - rsuite adoption is under way, plan and progress in
   `docs/plans/rsuite-adoption.md`. Decided: coexists with Tailwind (Tailwind
   keeps layout/spacing/typography, rsuite takes interactive controls only),
@@ -93,9 +101,15 @@ waits for `migrate` to exit successfully. The box exposes nothing but SSH, and
   a real `/platform-home` page (`src/app/globals.css` now imports
   `rsuite/dist/rsuite-no-reset.css`); check any earlier screenshot or
   visual impression of a rsuite Button/Modal predating that fix against a
-  fresh one before trusting it. Next: phase 3, forms and controls on
-  `/teach` (publish `Toggle`, instructor `SelectPicker`, the course/program
-  forms).
+  fresh one before trusting it. Phase 3 (forms and controls on `/teach`) and
+  most of phase 4 (`/settings/people`) went in with the reskin, since the
+  screens were being rebuilt anyway: `Input`, `SelectPicker`, `Toggle`,
+  `Checkbox`, `Slider`, `Modal`, `RadioGroup`. Two controls were tried and
+  rejected on purpose, both recorded in the code: rsuite's `DatePicker` on
+  the enrolment panel (cannot be driven from the browser suite, and a silently
+  unset expiry is not acceptable there) and `InputNumber` is kept only for the
+  price field. Still on Tailwind: `/settings/domains`, `/settings/signup`, and
+  every student surface.
 - `/platform-home` (the apex domain, lamplight.school itself) is a basic
   real page now, not the placeholder stub it was: a hero, a short
   description, three rsuite `Panel` feature blurbs, no call to action
@@ -103,9 +117,25 @@ waits for `migrate` to exit successfully. The box exposes nothing but SSH, and
   codebase to point one at). The user is about to do a full visual reskin
   of the whole app in Claude Design in a separate session, so this was kept
   deliberately basic rather than polished twice.
+- **The browser suite is updated but has never been run.** `pnpm test:e2e`
+  starts its own server with `pnpm build && pnpm start`, and `pnpm build`
+  fails on Windows with EPERM symlink errors from `output: 'standalone'`, so
+  none of the reskin's spec changes have executed anywhere yet. Worse, the
+  suite was already failing before the reskin: commit `3a03fec` moved
+  `/courses/[courseId]/edit` to `/teach/courses/[courseId]` and updated no
+  spec. CI on Linux is the first thing that will actually run these. Expect
+  breakage and read the failures as selector drift before assuming the
+  product is wrong.
+- `/` is the last screen on pre-reskin styling. It duplicates the catalogue's
+  hero, its programs and a four-course taste. No mockup covers it, so it
+  needs design input first; deferred deliberately, not forgotten.
 - Roll the Cloudflare API token and the Brevo API key, both exposed in an
-  earlier session transcript.
+  earlier session transcript. This matters more before a deploy than on an
+  ordinary day.
 - R2 bucket wants recreating in ENAM: it was made in APAC and location is fixed
   at creation.
 - Not built: payments, grading, assessments, bulk import and export, the
-  per-institute API and MCP server.
+  per-institute API and MCP server. Course settings can now set a price
+  (`products.price_cents`, `courses.is_standalone_purchasable`) and the
+  catalogue displays it, but nothing takes a payment, and the copy on that
+  field says so rather than promising Stripe.

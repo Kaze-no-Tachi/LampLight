@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { Button } from 'rsuite';
 import { ConfirmModal } from '../../../confirm-modal';
-import { archiveCourseAction } from '../../../teach/catalog-actions';
+import { archiveCourseAction } from '../../catalog-actions';
 
 /**
  * The one-way door. Shown to admins only: whether the course still exists is

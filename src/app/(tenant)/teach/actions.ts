@@ -10,6 +10,7 @@ import {
   decideLessonAuthoring,
 } from '@/lib/access/authoring';
 import { requireViewer } from '@/lib/auth/guards';
+import { resolveModule } from '@/lib/catalog/authoring';
 import { checkUpload, formatBytes, readDuration } from '@/lib/media/uploads';
 import { buildObjectKey } from '@/lib/storage/keys';
 import {
@@ -96,62 +97,60 @@ export async function addModuleAction(
   return { status: 'ok' };
 }
 
+export type AddLessonResult =
+  { status: 'ok'; lessonId: string } | { status: 'error'; message: string };
+
 /**
  * Adds a lesson to a course without anybody naming a section.
  *
  * The existing addLessonAction takes a moduleId, which is right for a course
  * that has several sections and wrong for the common case: an institute
  * writing its first course does not have a mental model of sections and should
- * not have to acquire one to add lesson two. This resolves the section itself,
- * using the first one, and creates it if a course somehow has none, which is
- * true of every course made before courses came with one.
+ * not have to acquire one to add lesson two. Left to itself this resolves the
+ * section, using the first one, and creates it if a course somehow has none,
+ * which is true of every course made before courses came with one.
+ *
+ * WHERE THE SECTION CAN BE NAMED. `moduleId` files the lesson under a section
+ * that already exists; `newModule` makes one and files it there. Both are
+ * optional, and the add-a-lesson screen only offers either once a course has
+ * more than one section to tell apart (mockup 8, and the round 2 decision that
+ * a one-section course never says the word). They are also how a second
+ * section gets created at all: the control for that went away with the old
+ * /teach workspace in chunk 4, and addModuleAction has had no caller since.
+ *
+ * A moduleId from the form is checked against this course rather than
+ * trusted. Without that, an instructor assigned to one course could file a
+ * lesson into another course's section by editing the payload, and that other
+ * course's students would then be able to hear it.
+ *
+ * Returns the id, because creating a lesson lands in its editor: the recording
+ * and the notes are the next thing anybody does and they are not here.
  */
 export async function addLessonToCourseAction(
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<AddLessonResult> {
   const viewer = await requireViewer();
   const courseId = String(formData.get('courseId') ?? '');
   const title = String(formData.get('title') ?? '').trim();
   const isFreePreview = formData.get('isFreePreview') !== null;
+  const askedModuleId = String(formData.get('moduleId') ?? '');
+  const newModule = String(formData.get('newModule') ?? '').trim();
 
   if (!title) return { status: 'error', message: 'A title is required.' };
 
-  const done = await getTenantDb(viewer.tenant.id).run(async (scope) => {
+  const created = await getTenantDb(viewer.tenant.id).run(async (scope) => {
     const decision = await decideCourseAuthoring(
       scope,
       { tenantId: viewer.tenant.id, userId: viewer.userId },
       courseId,
     );
-    if (!decision.allowed) return false;
+    if (!decision.allowed) return null;
 
-    const [first] = await scope.tx
-      .select({ id: modules.id })
-      .from(modules)
-      .where(
-        and(
-          eq(modules.tenantId, scope.tenantId),
-          eq(modules.courseId, courseId),
-        ),
-      )
-      .orderBy(modules.sortOrder)
-      .limit(1);
-
-    let moduleId = first?.id;
-
-    if (!moduleId) {
-      const [made] = await scope.tx
-        .insert(modules)
-        .values({
-          tenantId: scope.tenantId,
-          courseId,
-          title: 'Lessons',
-          sortOrder: 0,
-        })
-        .returning({ id: modules.id });
-      moduleId = made?.id;
-    }
-
-    if (!moduleId) return false;
+    const moduleId = await resolveModule(scope, courseId, {
+      askedModuleId,
+      newModule,
+    });
+    if (!moduleId) return null;
 
     const next = await scope.tx
       .select({
@@ -165,23 +164,28 @@ export async function addLessonToCourseAction(
         ),
       );
 
-    await scope.tx.insert(lessons).values({
-      tenantId: scope.tenantId,
-      moduleId,
-      title,
-      slug: slugify(title),
-      isFreePreview,
-      sortOrder: next[0]?.next ?? 0,
-    });
+    const [made] = await scope.tx
+      .insert(lessons)
+      .values({
+        tenantId: scope.tenantId,
+        moduleId,
+        title,
+        slug: slugify(title),
+        isFreePreview,
+        sortOrder: next[0]?.next ?? 0,
+      })
+      .returning({ id: lessons.id });
 
-    return true;
+    return made?.id ?? null;
   });
 
-  if (!done) return { status: 'error', message: 'That course is not yours.' };
+  if (!created) {
+    return { status: 'error', message: 'That course is not yours.' };
+  }
 
-  revalidatePath(`/courses/${courseId}/edit`);
+  revalidatePath(`/teach/courses/${courseId}`);
   revalidatePath('/teach');
-  return { status: 'ok' };
+  return { status: 'ok', lessonId: created };
 }
 
 export type UploadTicket =

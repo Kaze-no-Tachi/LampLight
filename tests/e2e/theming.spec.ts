@@ -79,9 +79,9 @@ test.describe('an admin changing the brand', () => {
     // A colour nothing else in the fixture uses, so seeing it anywhere means
     // it came from this save.
     const brand = '#7b2d8e';
-    await page.locator('input.font-mono').first().fill(brand);
-    await page.getByRole('button', { name: /^Save$/ }).click();
-    await expect(page.getByText('Saved.')).toBeVisible();
+    await page.locator('input[aria-label="Brand colour as hex"]').fill(brand);
+    await page.getByRole('button', { name: /^Publish to / }).click();
+    await expect(page.getByText('Saved just now')).toBeVisible();
 
     // A visitor with no session at all, which is who the front page is for.
     const visitorContext = await browser.newContext();
@@ -94,9 +94,11 @@ test.describe('an admin changing the brand', () => {
     // Put it back, so the fixture is what the seed says it is for every other
     // spec in the suite.
     await page.reload();
-    await page.locator('input.font-mono').first().fill('#1f3a5f');
-    await page.getByRole('button', { name: /^Save$/ }).click();
-    await expect(page.getByText('Saved.')).toBeVisible();
+    await page
+      .locator('input[aria-label="Brand colour as hex"]')
+      .fill('#1f3a5f');
+    await page.getByRole('button', { name: /^Publish to / }).click();
+    await expect(page.getByText('Saved just now')).toBeVisible();
   });
 
   test('refuses anything that is not a colour', async ({ page }) => {
@@ -108,10 +110,9 @@ test.describe('an admin changing the brand', () => {
     await page.goto(url(GRACE_HOST, '/settings/branding'));
 
     await page
-      .locator('input.font-mono')
-      .first()
+      .locator('input[aria-label="Brand colour as hex"]')
       .fill('#fff;}body{display:none}');
-    await page.getByRole('button', { name: /^Save$/ }).click();
+    await page.getByRole('button', { name: /^Publish to / }).click();
 
     await expect(page.getByText(/not a colour/i)).toBeVisible();
 

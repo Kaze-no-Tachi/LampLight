@@ -34,7 +34,35 @@
       `844ce20`, alongside a real `/platform-home` (the platform apex's own
       page, not one of the phases below since it is not a tenant screen,
       but it uses rsuite `Panel`/`Divider` and is what surfaced the bug).
-- [ ] **Phase 3, forms and controls on `/teach`**, next.
+- [x] **Phase 3, forms and controls on `/teach`,** and most of phase 4 with
+      it. Both landed inside the visual reskin rather than as their own
+      commits, because the screens they cover were being rebuilt from the
+      design handoff anyway and converting them twice would have been the
+      only alternative. Adopted: `Input` (text and textarea) across the four
+      authoring screens, `SelectPicker` for the instructor roster and the
+      enrolment source, `Toggle` for course publish state, `Checkbox` for the
+      free-preview and scholarship flags, `Slider` for the branding radius,
+      `Modal` for inviting people, `RadioGroup` for the invite role. The
+      `/teach` course and program creation forms are pages now
+      (`/teach/courses/new`), so the "course/program forms" line in phase 3
+      became a new screen rather than a conversion.
+- [ ] **Phase 4, the rest.** `/settings/domains` and `/settings/signup` are
+      still Tailwind and plain elements. The student surfaces are last, and
+      the coexistence approach has held up well enough on staff screens to
+      justify going there.
+
+**Two controls rejected on purpose, both recorded at the call site:**
+
+- **`DatePicker`, on the enrolment panel.** It cannot be driven reliably from
+  Playwright, and the panel decides who can hear what: an expiry that
+  silently fails to be set is not an acceptable failure mode for a prettier
+  control. Reverted to a native `<input type="date">`, which also brings the
+  platform's own keyboard and locale handling.
+- **A rsuite control for the brand colour.** The branding screen briefly had
+  only four swatches and a native colour input, and lost the typed hex field
+  an institute with a brand book actually uses, along with the e2e test that
+  proves an unparsed colour never reaches a stylesheet on their own domain.
+  Both are back.
 
 **Decisions taken:**
 

@@ -61,13 +61,14 @@ export async function grantAction(formData: FormData): Promise<ActionResult> {
   if (outcome.status === 'error') {
     return { status: 'error', message: outcome.message };
   }
-  return {
-    status: 'ok',
-    message:
-      outcome.status === 'already'
-        ? 'They already had that. Nothing changed.'
-        : 'Granted.',
-  };
+  // A message only when there is something the button does not already say.
+  // The panel's button becomes "Access granted" on success (mockup 10), so
+  // adding "Granted." on top of it was one word saying the same thing twice;
+  // the case that genuinely needs words is the one that succeeded without
+  // changing anything.
+  return outcome.status === 'already'
+    ? { status: 'ok', message: 'They already had that. Nothing changed.' }
+    : { status: 'ok' };
 }
 
 export async function revokeAction(formData: FormData): Promise<ActionResult> {

@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getViewer } from '@/lib/auth/guards';
 import { primaryRedirectFor } from '@/lib/domains/redirect';
+import { isStaffPath } from '@/lib/staff-paths';
 import { requireTenant } from '@/lib/tenancy/context';
 import { loadBranding } from '@/lib/theme/branding';
 import { SiteFooter, SiteHeader, ThemeStyle } from './chrome';
@@ -62,6 +64,13 @@ export default async function TenantLayout({
   const branding = await loadBranding(tenant);
   const viewer = await getViewer();
 
+  // Staff screens carry their own chrome, a sidebar rather than this header
+  // (see staff-shell.tsx). Decided here because a child layout cannot remove
+  // what its parent already rendered, and read from the path the middleware
+  // forwarded rather than from the client, which must not get to choose which
+  // chrome it is served.
+  const staff = isStaffPath((await headers()).get('x-lamplight-path'));
+
   return (
     <>
       <ThemeStyle branding={branding} />
@@ -75,9 +84,9 @@ export default async function TenantLayout({
       <RsuiteProvider>
         <PlayerProvider>
           <div className="flex min-h-screen flex-col pb-24">
-            <SiteHeader branding={branding} viewer={viewer} />
+            {staff ? null : <SiteHeader branding={branding} viewer={viewer} />}
             <div className="flex-1">{children}</div>
-            <SiteFooter branding={branding} />
+            {staff ? null : <SiteFooter branding={branding} />}
           </div>
         </PlayerProvider>
       </RsuiteProvider>

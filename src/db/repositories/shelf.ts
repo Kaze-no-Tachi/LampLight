@@ -28,6 +28,8 @@ export type ShelfLesson = {
   title: string;
   /** Seconds in, from the last sync. Zero for a lesson never opened. */
   positionSeconds: number;
+  /** Null until a recording is attached, so "N left of M" has to cope. */
+  durationSeconds: number | null;
 };
 
 export type ShelfCourse = {
@@ -50,7 +52,14 @@ export type ShelfCourse = {
 async function lessonsOf(
   scope: TenantScope,
   courseIds: string[],
-): Promise<{ id: string; title: string; courseId: string }[]> {
+): Promise<
+  {
+    id: string;
+    title: string;
+    courseId: string;
+    durationSeconds: number | null;
+  }[]
+> {
   if (courseIds.length === 0) return [];
 
   return scope.tx
@@ -58,6 +67,7 @@ async function lessonsOf(
       id: lessons.id,
       title: lessons.title,
       courseId: modules.courseId,
+      durationSeconds: lessons.durationSeconds,
     })
     .from(lessons)
     .innerJoin(
@@ -137,6 +147,7 @@ export async function listShelfCourses(
             id: next.id,
             title: next.title,
             positionSeconds: byLesson.get(next.id)?.positionSeconds ?? 0,
+            durationSeconds: next.durationSeconds,
           }
         : null,
     };

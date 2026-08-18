@@ -1,12 +1,18 @@
 import {
   findCourseBySlug,
+  listCourseInstructors,
   listCourseResources,
+  listCourseStats,
+  listCourseTags,
+  listProgramsForCourse,
   listPublishedCourses,
   listPublishedPrograms,
+  listTagsForCourses,
 } from '@/db/repositories/catalog';
 import {
   countCourseEnrollments,
   listAssignableStaff,
+  listCourseShapes,
   listCoursesForAdmin,
   listProgramsForAdmin,
 } from '@/db/repositories/catalog-admin';
@@ -20,6 +26,7 @@ import {
   listEnrollments,
   listGrantableSources,
   listRoster,
+  listRosterAccess,
 } from '@/db/repositories/entitlements';
 import { findBranding, findSignupQuestions } from '@/db/repositories/settings';
 import {
@@ -104,6 +111,90 @@ function lessonIds(tenant: SeedTenant): Set<string> {
 }
 
 export const READ_PATHS: ReadPath[] = [
+  {
+    name: 'catalog-admin.listCourseShapes',
+    async run(scope, subject) {
+      // Named by another institute's course ids. A lost filter would report one
+      // institute's outstanding recordings on another's teaching list.
+      const courseIds = subject.courses.map((course) => course.id);
+      const rows = await listCourseShapes(scope, courseIds);
+      const subjectIds = new Set(courseIds);
+      return ownedBySubject(
+        rows.map((row) => row.courseId),
+        subjectIds,
+      );
+    },
+  },
+  {
+    name: 'catalog.listCourseTags',
+    async run(scope, subject) {
+      // Keyed on the tenant alone. Both fixtures carry the same tag slugs, so
+      // a lost filter returns a vocabulary that looks correct and is not.
+      const rows = await listCourseTags(scope);
+      const subjectIds = new Set(subject.tags.map((tag) => tag.id));
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        subjectIds,
+      );
+    },
+  },
+  {
+    name: 'catalog.listTagsForCourses',
+    async run(scope, subject) {
+      // Named by another institute's course ids, which is how the catalogue
+      // would leak: the tag rows come back joined to courses the caller does
+      // not own.
+      const courseIds = subject.courses.map((course) => course.id);
+      const rows = await listTagsForCourses(scope, courseIds);
+      const subjectIds = new Set(subject.tags.map((tag) => tag.id));
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        subjectIds,
+      );
+    },
+  },
+  {
+    name: 'catalog.listCourseStats',
+    async run(scope, subject) {
+      // The aggregate is keyed on course, so a lost filter reports one
+      // institute's lesson counts under another's catalogue.
+      const courseIds = subject.courses.map((course) => course.id);
+      const rows = await listCourseStats(scope, courseIds);
+      const subjectIds = new Set(courseIds);
+      return ownedBySubject(
+        rows.map((row) => row.courseId),
+        subjectIds,
+      );
+    },
+  },
+  {
+    name: 'catalog.listCourseInstructors',
+    async run(scope, subject) {
+      // A lost filter would put one institute's staff on another's public
+      // course page.
+      const course = courseBySlug(subject, 'old-testament-survey');
+      const rows = await listCourseInstructors(scope, course.id);
+      const subjectIds = new Set(
+        Object.values(subject.users).map((user) => user.id),
+      );
+      return ownedBySubject(
+        rows.map((row) => row.userId),
+        subjectIds,
+      );
+    },
+  },
+  {
+    name: 'catalog.listProgramsForCourse',
+    async run(scope, subject) {
+      const course = courseBySlug(subject, 'old-testament-survey');
+      const rows = await listProgramsForCourse(scope, course.id);
+      const subjectIds = new Set(subject.programs.map((p) => p.id));
+      return ownedBySubject(
+        rows.map((row) => row.id),
+        subjectIds,
+      );
+    },
+  },
   {
     name: 'catalog.listCourseResources',
     async run(scope, subject) {
@@ -350,6 +441,26 @@ export const READ_PATHS: ReadPath[] = [
       // their id legitimately appears in both rosters, and counting it as
       // "belonging to the subject" would report a correct roster as a leak.
       const rows = await listRoster(scope);
+      const subjectUserIds = new Set(
+        Object.entries(subject.users)
+          .filter(([key]) => key !== 'shared')
+          .map(([, user]) => user.id),
+      );
+      return ownedBySubject(
+        rows.map((row) => row.userId),
+        subjectUserIds,
+      );
+    },
+  },
+  {
+    name: 'entitlements.listRosterAccess',
+    async run(scope, subject) {
+      // Keyed on nothing the caller supplies: it answers for the whole
+      // institute, which is exactly the shape a lost tenant filter turns into
+      // every enrolment on the platform. Checked by user id, and the shared
+      // student is excluded for the same reason as in listRoster: they hold a
+      // membership at both institutes on purpose.
+      const rows = await listRosterAccess(scope);
       const subjectUserIds = new Set(
         Object.entries(subject.users)
           .filter(([key]) => key !== 'shared')

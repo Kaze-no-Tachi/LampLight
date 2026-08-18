@@ -480,3 +480,66 @@ export async function listEnrollmentDetails(
     sourceTitle: row.programTitle ?? row.courseTitle ?? 'Removed',
   }));
 }
+
+export type RosterAccess = {
+  userId: string;
+  sourceKind: 'program' | 'course';
+  sourceTitle: string;
+  expiresAt: Date | null;
+};
+
+/**
+ * Every entitlement at this institute, by the person holding it.
+ *
+ * The people screen needs two columns per member that a count cannot answer:
+ * what they can reach, by name, and whether any of it is still live. Asking
+ * listEnrollmentDetails once per member would be a query per row, so this
+ * answers for the whole roster in one.
+ *
+ * Read on the server and rendered there. The rows never reach the browser,
+ * which is what keeps a large institute's roster from becoming a large
+ * institute's payload.
+ *
+ * Expired rows are included rather than filtered. "Their access ran out in
+ * March" is the answer to the question that brings an admin to this screen,
+ * and the caller decides how to say it.
+ */
+export async function listRosterAccess(
+  scope: TenantScope,
+): Promise<RosterAccess[]> {
+  const rows = await scope.tx
+    .select({
+      userId: enrollments.userId,
+      sourceKind: enrollments.sourceKind,
+      expiresAt: enrollments.expiresAt,
+      programTitle: programs.title,
+      courseTitle: courses.title,
+    })
+    .from(enrollments)
+    // Left joins, one per source kind, because source_id is a polymorphic
+    // reference: exactly one of these matches for any given row. Both are
+    // tenant filtered as well, so a title can only ever come from here.
+    .leftJoin(
+      programs,
+      and(
+        eq(programs.tenantId, scope.tenantId),
+        eq(programs.id, enrollments.sourceId),
+      ),
+    )
+    .leftJoin(
+      courses,
+      and(
+        eq(courses.tenantId, scope.tenantId),
+        eq(courses.id, enrollments.sourceId),
+      ),
+    )
+    .where(eq(enrollments.tenantId, scope.tenantId))
+    .orderBy(asc(enrollments.grantedAt));
+
+  return rows.map((row) => ({
+    userId: row.userId,
+    sourceKind: row.sourceKind,
+    expiresAt: row.expiresAt,
+    sourceTitle: row.programTitle ?? row.courseTitle ?? 'Removed',
+  }));
+}

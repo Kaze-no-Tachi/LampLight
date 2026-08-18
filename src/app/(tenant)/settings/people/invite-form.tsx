@@ -1,11 +1,18 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import { Button, Input, Modal, Radio, RadioGroup } from 'rsuite';
 import { inviteAction } from './actions';
 
 /**
  * Inviting people by address, in bulk, because an institute enrolling a cohort
  * has a list and not one name.
+ *
+ * A dialog off the header button (mockup 10) rather than a permanent block
+ * above the roster. Inviting is occasional and the roster is what the screen
+ * is for; a form that is always open pushes the list somebody came to read
+ * down the page every day to serve the week it is used.
  *
  * The result deliberately does not say what happened to each address. Whether
  * somebody already has an account, here or at another institute on Lamplight,
@@ -13,6 +20,8 @@ import { inviteAction } from './actions';
  * into a way to test addresses against the whole platform.
  */
 export function InviteForm() {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [emails, setEmails] = useState('');
   const [role, setRole] = useState<'student' | 'admin'>('student');
   const [result, setResult] = useState<string | null>(null);
@@ -40,56 +49,86 @@ export function InviteForm() {
             ? ` Not an address, so skipped: ${outcome.skipped.join(', ')}.`
             : ''),
       );
+      router.refresh();
     });
   }
 
   return (
-    <section className="flex flex-col gap-3 rounded-lg border p-4">
-      <h2 className="text-sm font-medium">Invite people</h2>
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setResult(null);
+          setError(null);
+          setOpen(true);
+        }}
+        className="bg-primary text-primary-foreground cursor-pointer rounded-(--radius) px-4 py-2.5 text-(length:--text-ui) font-medium"
+      >
+        Invite by email
+      </button>
 
-      <label className="flex flex-col gap-1 text-sm">
-        Addresses, one per line
-        <textarea
-          rows={4}
-          value={emails}
-          onChange={(event) => setEmails(event.target.value)}
-          placeholder={'student@example.com\nanother@example.com'}
-          className="rounded-md border px-3 py-2 font-mono text-xs"
-        />
-      </label>
+      <Modal open={open} onClose={() => setOpen(false)} size="sm">
+        <Modal.Header>
+          <Modal.Title>Invite people</Modal.Title>
+        </Modal.Header>
 
-      <fieldset className="flex flex-wrap gap-4 text-sm">
-        <legend className="sr-only">What they join as</legend>
-        {(['student', 'admin'] as const).map((option) => (
-          <label key={option} className="flex items-center gap-2">
-            <input
-              type="radio"
+        <Modal.Body>
+          <div className="flex flex-col gap-3.5">
+            <label className="flex flex-col gap-1.5 text-(length:--text-label)">
+              Addresses, one per line
+              <Input
+                as="textarea"
+                rows={5}
+                value={emails}
+                onChange={(next: string) => setEmails(next)}
+                placeholder={'student@example.com\nanother@example.com'}
+                className="font-mono"
+              />
+            </label>
+
+            <RadioGroup
+              inline
               name="role"
-              checked={role === option}
-              onChange={() => setRole(option)}
-            />
-            {option === 'student' ? 'As students' : 'As administrators'}
-          </label>
-        ))}
-      </fieldset>
+              value={role}
+              onChange={(next) => setRole(next as 'student' | 'admin')}
+            >
+              <Radio value="student">As students</Radio>
+              <Radio value="admin">As administrators</Radio>
+            </RadioGroup>
 
-      <p className="text-muted-foreground text-sm">
-        Each person gets a link to choose their own password. No account exists
-        until they do, so an address entered by mistake creates nothing.
-      </p>
+            <p className="text-muted-foreground text-(length:--text-label) leading-[1.55]">
+              Each person gets a link to choose their own password. No account
+              exists until they do, so an address entered by mistake creates
+              nothing.
+            </p>
 
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          disabled={pending || emails.trim().length === 0}
-          onClick={submit}
-          className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm disabled:opacity-60"
-        >
-          {pending ? 'Sending...' : 'Send invitations'}
-        </button>
-        {result && <span className="text-sm">{result}</span>}
-        {error && <span className="text-destructive text-sm">{error}</span>}
-      </div>
-    </section>
+            {result && (
+              <p className="text-(length:--text-label)" role="status">
+                {result}
+              </p>
+            )}
+            {error && (
+              <p className="text-destructive text-(length:--text-label)">
+                {error}
+              </p>
+            )}
+          </div>
+        </Modal.Body>
+
+        <Modal.Footer>
+          <Button onClick={() => setOpen(false)} disabled={pending}>
+            Close
+          </Button>
+          <Button
+            appearance="primary"
+            loading={pending}
+            disabled={emails.trim().length === 0}
+            onClick={submit}
+          >
+            Send invitations
+          </Button>
+        </Modal.Footer>
+      </Modal>
+    </>
   );
 }

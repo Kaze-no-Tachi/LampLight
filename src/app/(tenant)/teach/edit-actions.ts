@@ -21,6 +21,7 @@ import {
 import {
   archiveLesson,
   reorderLesson,
+  setCourseTags,
   setLessonPublished,
   type ReorderDirection,
 } from '@/lib/catalog/authoring';
@@ -65,6 +66,7 @@ export async function updateCourseAction(
   const courseId = String(formData.get('courseId') ?? '');
   const title = String(formData.get('title') ?? '').trim();
   const descriptionMd = String(formData.get('descriptionMd') ?? '').trim();
+  const tags = formData.getAll('tags').map(String);
 
   if (title.length < 2 || title.length > MAX_TITLE) {
     return { status: 'error', message: 'A course needs a title.' };
@@ -88,13 +90,22 @@ export async function updateCourseAction(
         and(eq(courses.tenantId, scope.tenantId), eq(courses.id, courseId)),
       );
 
+    // Tags come through here rather than through catalog-actions, because
+    // what a course is about is the same kind of fact as what it says, and an
+    // assigned instructor already writes that. Deciding what it costs and
+    // whether anybody can see it stays admin-only.
+    //
+    // Sent as the whole set on every save, so removing the last tag is an
+    // ordinary save rather than a case the caller has to remember.
+    await setCourseTags(scope, courseId, tags);
+
     return true;
   });
 
   if (!done) return DENIED;
 
   revalidatePath('/teach');
-  revalidatePath(`/courses/${courseId}/edit`);
+  revalidatePath(`/teach/courses/${courseId}`);
   // The catalog and the course page both read this.
   revalidatePath('/catalogue', 'layout');
   return { status: 'ok' };
@@ -204,7 +215,7 @@ export async function setLessonPublishedAction(
 
   if (!courseId) return DENIED;
 
-  revalidatePath(`/courses/${courseId}/edit`);
+  revalidatePath(`/teach/courses/${courseId}`);
   revalidatePath('/catalogue', 'layout');
   revalidatePath('/courses');
   return { status: 'ok' };
@@ -236,7 +247,7 @@ export async function archiveLessonAction(
 
   if (!courseId) return DENIED;
 
-  revalidatePath(`/courses/${courseId}/edit`);
+  revalidatePath(`/teach/courses/${courseId}`);
   revalidatePath('/catalogue', 'layout');
   revalidatePath('/courses');
   return { status: 'ok' };
@@ -268,7 +279,7 @@ export async function reorderLessonAction(
   // read as broken, it has simply run out of neighbours to swap with.
   if (result.outcome.status === 'edge') return { status: 'ok' };
 
-  revalidatePath(`/courses/${result.courseId}/edit`);
+  revalidatePath(`/teach/courses/${result.courseId}`);
   return { status: 'ok' };
 }
 
@@ -357,7 +368,7 @@ export async function addCourseLinkAction(
 
   if (!done) return DENIED;
 
-  revalidatePath(`/courses/${courseId}/edit`);
+  revalidatePath(`/teach/courses/${courseId}`);
   revalidatePath('/catalogue', 'layout');
   return { status: 'ok' };
 }
@@ -454,7 +465,7 @@ function readTarget(formData: FormData): AttachmentTarget | null {
 
 function revalidateFor(target: AttachmentTarget): void {
   if (target.kind === 'course') {
-    revalidatePath(`/courses/${target.id}/edit`);
+    revalidatePath(`/teach/courses/${target.id}`);
     revalidatePath('/catalogue', 'layout');
     return;
   }
