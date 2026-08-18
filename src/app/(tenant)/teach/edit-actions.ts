@@ -94,7 +94,7 @@ export async function updateCourseAction(
   if (!done) return DENIED;
 
   revalidatePath('/teach');
-  revalidatePath(`/courses/${courseId}/edit`);
+  revalidatePath(`/teach/courses/${courseId}`);
   // The catalog and the course page both read this.
   revalidatePath('/catalogue', 'layout');
   return { status: 'ok' };
@@ -204,7 +204,7 @@ export async function setLessonPublishedAction(
 
   if (!courseId) return DENIED;
 
-  revalidatePath(`/courses/${courseId}/edit`);
+  revalidatePath(`/teach/courses/${courseId}`);
   revalidatePath('/catalogue', 'layout');
   revalidatePath('/courses');
   return { status: 'ok' };
@@ -236,7 +236,7 @@ export async function archiveLessonAction(
 
   if (!courseId) return DENIED;
 
-  revalidatePath(`/courses/${courseId}/edit`);
+  revalidatePath(`/teach/courses/${courseId}`);
   revalidatePath('/catalogue', 'layout');
   revalidatePath('/courses');
   return { status: 'ok' };
@@ -268,7 +268,7 @@ export async function reorderLessonAction(
   // read as broken, it has simply run out of neighbours to swap with.
   if (result.outcome.status === 'edge') return { status: 'ok' };
 
-  revalidatePath(`/courses/${result.courseId}/edit`);
+  revalidatePath(`/teach/courses/${result.courseId}`);
   return { status: 'ok' };
 }
 
@@ -357,7 +357,7 @@ export async function addCourseLinkAction(
 
   if (!done) return DENIED;
 
-  revalidatePath(`/courses/${courseId}/edit`);
+  revalidatePath(`/teach/courses/${courseId}`);
   revalidatePath('/catalogue', 'layout');
   return { status: 'ok' };
 }
@@ -454,7 +454,7 @@ function readTarget(formData: FormData): AttachmentTarget | null {
 
 function revalidateFor(target: AttachmentTarget): void {
   if (target.kind === 'course') {
-    revalidatePath(`/courses/${target.id}/edit`);
+    revalidatePath(`/teach/courses/${target.id}`);
     revalidatePath('/catalogue', 'layout');
     return;
   }

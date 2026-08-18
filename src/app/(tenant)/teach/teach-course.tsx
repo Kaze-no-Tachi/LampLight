@@ -109,7 +109,7 @@ export function TeachCourse({ course }: { course: Course }) {
 
       <div className="flex flex-wrap items-center gap-2">
         <Link
-          href={`/courses/${course.id}/edit`}
+          href={`/teach/courses/${course.id}`}
           className="bg-primary text-primary-foreground rounded-md px-4 py-2 text-sm font-medium"
         >
           Manage lessons

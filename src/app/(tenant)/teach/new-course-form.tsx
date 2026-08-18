@@ -30,7 +30,7 @@ export function NewCourseForm() {
             return;
           }
           setError(null);
-          router.push(`/courses/${result.courseId}/edit`);
+          router.push(`/teach/courses/${result.courseId}`);
         });
       }}
     >

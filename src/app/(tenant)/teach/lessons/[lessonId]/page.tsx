@@ -54,7 +54,7 @@ export default async function EditLessonPage({
     <main className="mx-auto flex max-w-3xl flex-col gap-8 px-6 py-10">
       <div className="flex flex-col gap-1">
         <Link
-          href={`/courses/${data.lesson.courseId}/edit`}
+          href={`/teach/courses/${data.lesson.courseId}`}
           className="text-muted-foreground text-sm hover:underline"
         >
           Back to {data.lesson.courseTitle}

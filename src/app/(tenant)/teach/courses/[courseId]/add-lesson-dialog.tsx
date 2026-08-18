@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { Button, Modal } from 'rsuite';
-import { addLessonToCourseAction } from '../../../teach/actions';
+import { addLessonToCourseAction } from '../../actions';
 
 /**
  * Adding a lesson, from the course you are already looking at.

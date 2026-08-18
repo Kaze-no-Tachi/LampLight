@@ -179,7 +179,7 @@ export async function addLessonToCourseAction(
 
   if (!done) return { status: 'error', message: 'That course is not yours.' };
 
-  revalidatePath(`/courses/${courseId}/edit`);
+  revalidatePath(`/teach/courses/${courseId}`);
   revalidatePath('/teach');
   return { status: 'ok' };
 }

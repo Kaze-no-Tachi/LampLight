@@ -2,11 +2,11 @@
 
 import { useState, useTransition } from 'react';
 import { Markdown } from '@/lib/markdown/render';
-import { Attachments } from '../../../teach/attachments';
+import { Attachments } from '../../attachments';
 import {
   addCourseLinkAction,
   updateCourseAction,
-} from '../../../teach/edit-actions';
+} from '../../edit-actions';
 
 type Resource = {
   id: string;
