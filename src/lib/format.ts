@@ -145,3 +145,42 @@ export function firstName(name: string | null, email: string): string {
   // not the place to find that out.
   return email.split('@')[0] || email;
 }
+
+/**
+ * "uploaded 3 days ago", for a file somebody may or may not have just
+ * replaced.
+ *
+ * Coarse on purpose, and coarser the further back it goes. The question this
+ * answers on the lesson editor is "is this the file I sent up ten minutes
+ * ago", and past a week nobody is counting: what matters then is only that it
+ * is old.
+ *
+ * Takes `now` rather than reading the clock, so the caller decides when it is
+ * being asked and the function stays testable. Rendered on the server, where
+ * the two clocks cannot disagree mid-hydration.
+ */
+export function sinceWhen(then: Date, now: Date): string {
+  const seconds = Math.max(
+    0,
+    Math.round((now.getTime() - then.getTime()) / 1000),
+  );
+
+  if (seconds < 90) return 'just now';
+
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'} ago`;
+  }
+
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'} ago`;
+
+  const days = Math.round(hours / 24);
+  if (days < 31) return `${days} ${days === 1 ? 'day' : 'days'} ago`;
+
+  const months = Math.round(days / 30);
+  if (months < 12) return `${months} ${months === 1 ? 'month' : 'months'} ago`;
+
+  const years = Math.round(months / 12);
+  return `${years} ${years === 1 ? 'year' : 'years'} ago`;
+}
