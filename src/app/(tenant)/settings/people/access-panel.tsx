@@ -66,7 +66,15 @@ export function AccessPanel({
     startTransition(async () => {
       const outcome = await grantAction(data);
       setError(outcome.status === 'error' ? outcome.message : null);
-      setMessage(outcome.status === 'ok' ? 'Access granted' : null);
+      // The action's own words when it has any, because it has one case that
+      // succeeds without changing anything: granting what somebody already
+      // holds answers "They already had that. Nothing changed." Hardcoding
+      // "Access granted" here reported a grant that had not happened, which is
+      // the one thing a screen deciding who can hear what must not do. Found
+      // by the browser suite, which asserts on that sentence.
+      setMessage(
+        outcome.status === 'ok' ? (outcome.message ?? 'Access granted') : null,
+      );
       if (outcome.status === 'ok') {
         setSource(null);
         setExpiresAt('');

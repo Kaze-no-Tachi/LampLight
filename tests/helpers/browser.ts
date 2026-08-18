@@ -123,7 +123,14 @@ export async function createCourse(
 
   // Lands in the course's own settings (round 2 decision), which is also where
   // its id first appears in a URL.
-  await page.waitForURL('**/teach/courses/*');
+  //
+  // MATCHED ON THE ID, NOT ON A GLOB. `**/teach/courses/*` is satisfied by
+  // /teach/courses/new, which is the page this function starts on, so the wait
+  // returned immediately and every caller then drove the new-course form
+  // believing it was on course settings. Four tests failed that way, all of
+  // them reporting whatever the new-course page happened to have under the
+  // cursor.
+  await page.waitForURL(/\/teach\/courses\/[0-9a-f-]{36}$/);
   const id = new URL(page.url()).pathname.split('/').pop();
   if (!id) throw new Error(`created "${title}" but landed on ${page.url()}`);
   return id;
@@ -153,7 +160,7 @@ export async function addLesson(
   }
 
   await page.getByRole('button', { name: /^Create lesson$/ }).click();
-  await page.waitForURL('**/teach/lessons/*');
+  await page.waitForURL(/\/teach\/lessons\/[0-9a-f-]{36}$/);
   const lessonId = new URL(page.url()).pathname.split('/').pop() ?? '';
 
   await page.goto(url(GRACE_HOST, `/teach/courses/${courseId}`));
@@ -171,5 +178,5 @@ export async function openCourseSettings(
     .first()
     .getByRole('link', { name: /^Course settings$/ })
     .click();
-  await page.waitForURL('**/teach/courses/*');
+  await page.waitForURL(/\/teach\/courses\/[0-9a-f-]{36}$/);
 }

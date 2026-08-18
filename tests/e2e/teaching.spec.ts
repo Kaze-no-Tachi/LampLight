@@ -98,9 +98,20 @@ test.describe('an instructor changing a course', () => {
     const coursePath = await openCourseEditor(page);
 
     const marker = `Covering the historical books ${Date.now()}`;
+
+    // LONG ENOUGH TO REACH THE NOTES BLOCK. The reskinned course page shows a
+    // plain-text excerpt under the title and only renders the markdown further
+    // down when the description says more than that excerpt already did. A
+    // short description therefore renders as text, and this test's claim about
+    // elements would be asserted against the wrong half of the screen.
+    const filler =
+      'The historical books run from Joshua to Esther and carry the story ' +
+      'of the monarchy, the exile and the return. This course reads them ' +
+      'as one narrative rather than as a shelf of separate documents, and ' +
+      'sets each book beside the prophets who spoke into the same years.';
     await page
       .locator('textarea[aria-label="Catalogue description"]')
-      .fill(`## About\n\n${marker}\n\n- One\n- Two`);
+      .fill(`## About\n\n${marker}\n\n${filler}\n\n- One\n- Two`);
 
     // The form says what it has done in words beside the button rather than in
     // a toast, which the design is explicit about (mockups 6 and 9).

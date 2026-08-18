@@ -150,12 +150,17 @@ test.describe('every admin screen is reachable', () => {
     await signIn(page, PEOPLE.admin);
     await page.goto(url(GRACE_HOST, '/account'));
 
+    // The labels the reskin settled on. "Catalogue" used to name the
+    // catalogue-administration screen, which chunk 5 folded into /teach, and
+    // "Signup settings" shortened to "Signup". What the test is actually
+    // about has not changed: an admin can reach every one of these without
+    // knowing its path.
     for (const [label, path] of [
-      ['Catalogue', '/catalogue'],
+      ['Teach', '/teach'],
       ['People', '/settings/people'],
       ['Branding', '/settings/branding'],
       ['Domains', '/settings/domains'],
-      ['Signup settings', '/settings/signup'],
+      ['Signup', '/settings/signup'],
     ] as const) {
       const link = page.getByRole('link', { name: label, exact: true });
       await expect(link, `${label} should be in the header`).toBeVisible();
@@ -167,11 +172,17 @@ test.describe('every admin screen is reachable', () => {
     await signIn(page, PEOPLE.student);
     await page.goto(url(GRACE_HOST, '/account'));
 
-    for (const label of ['Catalogue', 'Domains', 'Signup settings'] as const) {
+    for (const label of ['Teach', 'People', 'Domains', 'Signup'] as const) {
       await expect(
         page.getByRole('link', { name: label, exact: true }),
       ).toHaveCount(0);
     }
+
+    // The public catalogue is still theirs to browse, which is the thing this
+    // must not accidentally assert away.
+    await expect(
+      page.getByRole('link', { name: 'Courses', exact: true }),
+    ).toBeVisible();
   });
 });
 
@@ -374,7 +385,9 @@ test.describe('the student shelf and self-enrolment', () => {
     ).toBeVisible();
 
     await page.goto(url(GRACE_HOST, '/courses'));
-    const row = page.locator('li', { hasText: 'Church History' });
+    const row = page
+      .locator('[data-testid="shelf-course"]')
+      .filter({ hasText: 'Church History' });
     await expect(row).toBeVisible();
     // No progress yet, so the shelf offers Start rather than Continue.
     await expect(row.getByRole('link', { name: /^Start$/ })).toBeVisible();
@@ -444,13 +457,13 @@ test.describe('the student shelf and self-enrolment', () => {
     await signIn(page, PEOPLE.student);
     await page.goto(url(GRACE_HOST, '/courses'));
 
-    // The course title also appears inside the program card below, once as
-    // its own summary and once in the program's per-course breakdown; only
-    // the shelf's own course row carries the "lessons" count and a Start
-    // link, which is what tells the three apart.
+    // The course title also appears inside the program card below, in the
+    // program's per-course breakdown. The shelf's own row is the one carrying
+    // the test id, which is what tells the two apart now that neither is a
+    // list item.
     const row = page
-      .locator('li', { hasText: 'Old Testament Survey' })
-      .filter({ hasText: 'lessons' });
+      .locator('[data-testid="shelf-course"]')
+      .filter({ hasText: 'Old Testament Survey' });
     await expect(row).toBeVisible();
     await expect(row.getByRole('link', { name: /^Start$/ })).toBeVisible();
 

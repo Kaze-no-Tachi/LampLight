@@ -246,7 +246,15 @@ function CourseRow({
       : Math.round((course.completedCount / course.lessonCount) * 100);
 
   return (
-    <div className="border-border hover:bg-muted flex flex-wrap items-center gap-5 px-6 py-5 transition-colors not-first:border-t">
+    // Named for the browser suite, the same as the teaching list's course
+    // card. The rows used to be list items and the specs reached for `li`;
+    // the reskin made them divs inside one bordered card, and a test that
+    // depends on which element a row happens to be is a test that breaks on
+    // every visual change.
+    <div
+      data-testid="shelf-course"
+      className="border-border hover:bg-muted flex flex-wrap items-center gap-5 px-6 py-5 transition-colors not-first:border-t"
+    >
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <Link
           href={`/catalogue/${course.slug}`}
