@@ -26,6 +26,7 @@ import {
   listEnrollments,
   listGrantableSources,
   listRoster,
+  listRosterAccess,
 } from '@/db/repositories/entitlements';
 import { findBranding, findSignupQuestions } from '@/db/repositories/settings';
 import {
@@ -440,6 +441,26 @@ export const READ_PATHS: ReadPath[] = [
       // their id legitimately appears in both rosters, and counting it as
       // "belonging to the subject" would report a correct roster as a leak.
       const rows = await listRoster(scope);
+      const subjectUserIds = new Set(
+        Object.entries(subject.users)
+          .filter(([key]) => key !== 'shared')
+          .map(([, user]) => user.id),
+      );
+      return ownedBySubject(
+        rows.map((row) => row.userId),
+        subjectUserIds,
+      );
+    },
+  },
+  {
+    name: 'entitlements.listRosterAccess',
+    async run(scope, subject) {
+      // Keyed on nothing the caller supplies: it answers for the whole
+      // institute, which is exactly the shape a lost tenant filter turns into
+      // every enrolment on the platform. Checked by user id, and the shared
+      // student is excluded for the same reason as in listRoster: they hold a
+      // membership at both institutes on purpose.
+      const rows = await listRosterAccess(scope);
       const subjectUserIds = new Set(
         Object.entries(subject.users)
           .filter(([key]) => key !== 'shared')
